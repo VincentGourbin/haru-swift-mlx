@@ -10,6 +10,6 @@ machine avant d'écrire une seule couche.
 | T-0.3 | `WeightPlan` : port de `weights.py` (plan de conversion par noms/formes, `parameterShapes(config)`, `checkPlan`) ; test contre l'en-tête réel (1022 tenseurs → paramètres attendus, 0 écart) | `TESTS OK`, `haru info --plan` affiche `PLAN OK` — **validée 2026-11-17** (898 paramètres, 0 écart) |
 | T-0.4 | Tokenizer (`swift-transformers`, `tokenizer.json`) + rendu de carte (`card_templates.json` copié dans les ressources) + `systemPromptIds` ; ids comparés à Python sur les 9 cartes d'exemple | ids identiques — **validée 2026-11-17** (9 cartes + 8 chaînes) |
 | T-0.5 | `NoiseSource` (clé MLX, `split`) ; fixture : mêmes clés → mêmes `normal` / `categorical` en Python et en Swift (sinon : bruit rejoué depuis la fixture dans tous les tests de parité) | décision consignée `decisions/rng.md` — **validée 2026-11-17** (identique sauf 1 valeur à 1 ulp : pas de rejeu) |
-| T-0.6 | `haru download` : copie de `HubDownloader` de sperid (Range, SHA-256 épinglé) | SHA-256 du checkpoint local vérifié |
+| T-0.6 | `haru download` : copie de `HubDownloader` de sperid (Range, SHA-256 épinglé) | SHA-256 du checkpoint local vérifié — **validée 2026-11-17** (révision `8d6e83bc`) |
 
 ⛔ G-0 : Vincent valide la mesure de référence et choisit la précision par défaut (bf16 / 8 bits).

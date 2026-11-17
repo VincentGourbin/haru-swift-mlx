@@ -34,3 +34,10 @@
 - Validation : `Scripts/check-tests.sh NoiseSourceTests` → `TESTS OK (2 tests, 0 skippés)` ; `Scripts/check-tests.sh` → `TESTS OK (16 tests, 0 skippés)`
 - Limites connues : la divergence d'une conversation à graine fixe sur un long horizon reste à mesurer (T-3.4)
 - Pas d'agent : 0 · appels d'outils : —
+
+## T-0.6 — Téléchargement épinglé — 2026-11-17 — validée
+- Fait : `Loading/{HubFile,HubDownloader,ChunkedDownloadDelegate,HubToken}.swift` (copiés de sperid, cas « gated » retiré), `Loading/HaruWeights.swift` (révision `8d6e83bc`, 4 fichiers, tailles et SHA-256), `haru download [--verify]`, `HaruWeightsTests`, `HubDownloaderTests` (serveur bouchon), `RealWeightsTests`
+- Bug réel rencontré : aucun
+- Validation : `Scripts/check-tests.sh` → `TESTS OK (23 tests, 0 skippés)` ; `HARU_MODELS_DIR=… Scripts/check-tests.sh RealWeightsTests` → `TESTS OK (1 tests, 0 skippés)` ; `haru download --verify` → `DOWNLOAD OK (4 files present, SHA-256 verified, revision 8d6e83bc)`
+- Limites connues : le chemin réseau réel n'est pas rejoué (les poids étaient déjà là : `hf download`)
+- Pas d'agent : 0 · appels d'outils : —

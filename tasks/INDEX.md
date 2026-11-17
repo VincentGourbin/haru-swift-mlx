@@ -9,7 +9,7 @@
 | T-0.3 | `WeightPlan` (port de `weights.py`) + `haru info --plan` | `plan/04-jalon0.md` | T-0.1 | validée |
 | T-0.4 | Tokenizer + rendu de carte + ids du system prompt | `plan/04-jalon0.md` | T-0.2 | validée |
 | T-0.5 | `NoiseSource` + fixture d'aléa Python ↔ Swift | `plan/04-jalon0.md` | T-0.2 | validée |
-| T-0.6 | `haru download` (copie de `HubDownloader`) + SHA-256 épinglés | `plan/04-jalon0.md` | T-0.3 | à faire |
+| T-0.6 | `haru download` (copie de `HubDownloader`) + SHA-256 épinglés | `plan/04-jalon0.md` | T-0.3 | validée |
 | T-1.1 | Fixtures tiny + `check-fixtures.sh` / `check-parity.sh` | `plan/05-jalon1.md` | T-0.2 | à faire |
 | T-1.2 | Convolutions causales (matrice) | `plan/05-jalon1.md` | T-1.1 | à faire |
 | T-1.3 | Mélangeur depthwise (noyau Metal + repli), `Block` | `plan/05-jalon1.md` | T-1.2 | à faire |

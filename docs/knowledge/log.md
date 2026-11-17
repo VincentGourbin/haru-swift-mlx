@@ -18,3 +18,4 @@
 ## 2026-11-17 — T-0.4 et T-0.5
 - T-0.4 : cartes des 9 langues et ids du system prompt identiques à haru_mlx (9 cartes + 8 chaînes limites).
 - T-0.5 : aléa MLX partagé — clés, bf16, `categorical` identiques ; `normal` fp32 : 1 valeur sur 1152 à 1 ulp. mlx-swift 0.32.3 embarque le cœur MLX v0.32.2 (Python : 0.32.4), cause probable. Pas de rejeu (`decisions/rng.md`).
+- T-0.6 : fichiers épinglés à la révision `8d6e83bc` du dépôt HF ; SHA-256 LFS du Hub = copies locales. **Jalon 0 terminé.**
