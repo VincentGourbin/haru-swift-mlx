@@ -11,7 +11,8 @@ let package = Package(
         // MARK: - Libraries
         /// Configuration, weights, models (backbone, codec, MeanFlow head) and the duplex session.
         .library(name: "HaruCore", targets: ["HaruCore"]),
-        // HaruAudio (Core Audio duplex I/O, playout) lands in Jalon 4, HaruUI / haru-studio in Jalon 6.
+        /// Core Audio duplex I/O, playback schedule, reply latency (upstream's client, Apache-2.0).
+        .library(name: "HaruAudio", targets: ["HaruAudio"]),
         // MARK: - CLI Tools
         .executable(name: "haru", targets: ["HaruCLI"]),
     ],
@@ -39,11 +40,13 @@ let package = Package(
             // Upstream card templates and example cards (Apache-2.0, higurashi-ai/Haru @ 7fe6b76).
             resources: [.copy("Resources/Cards")]
         ),
+        .target(name: "HaruAudio"),
         // MARK: - CLI Tools
         .executableTarget(
             name: "HaruCLI",
             dependencies: [
                 "HaruCore",
+                "HaruAudio",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),

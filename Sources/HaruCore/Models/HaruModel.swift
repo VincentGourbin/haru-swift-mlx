@@ -33,7 +33,7 @@ public final class HaruModel {
     public let codec: VibeVoiceCodec
     let latentScale: MLXArray
     let latentBias: MLXArray
-    public private(set) var tokenizer: HaruTokenizer?
+    public internal(set) var tokenizer: HaruTokenizer?
     public private(set) var quantizedBits: Int?
 
     init(_ store: WeightStore, config: HaruConfiguration) {
@@ -58,9 +58,7 @@ public final class HaruModel {
                                          config: config, dtype: dtype)
         let model = HaruModel(store, config: config)
         model.tokenizer = try await HaruTokenizer.load(directory: directory)
-        for layer in model.lm.layers { eval(layer.arrays) }
-        eval(model.lm.embedTokens.arrays + [model.lm.norm.weight, model.latentScale, model.latentBias])
-        eval(model.modelAudioProj.arrays + model.userAudioProj.arrays + model.head.arrays + model.codec.arrays)
+        model.evaluateParameters()
         if let quantize { try model.quantize(bits: quantize) }
         return model
     }
