@@ -27,3 +27,10 @@
 - Validation : `Scripts/check-build.sh` → `BUILD OK` ; `Scripts/check-tests.sh` → `TESTS OK (14 tests, 0 skippés)` ; `HARU_MODELS_DIR=… Scripts/check-tests.sh RealTokenizerTests` → `TESTS OK (2 tests, 0 skippés)` (9 cartes + 8 chaînes : ids identiques, aller-retour decode)
 - Limites connues : le détokeniseur de flux (PAD/EOP → espace, U+FFFD retenu) est en T-3.2
 - Pas d'agent : 0 · appels d'outils : —
+
+## T-0.5 — NoiseSource et aléa Python ↔ Swift — 2026-11-17 — validée
+- Fait : `Sampling/NoiseSource.swift`, `Scripts/reference/dump_rng.py` → `Tests/HaruTests/Fixtures/rng.json`, `NoiseSourceTests`, `docs/knowledge/decisions/rng.md`
+- Bug réel rencontré : bruit du codec à 1 ulp sur 1 valeur sur 1152 (cœur MLX v0.32.2 dans mlx-swift 0.32.3 contre 0.32.4 en Python, hypothèse) ; règle ≤ 1 ulp sur `normal` fp32
+- Validation : `Scripts/check-tests.sh NoiseSourceTests` → `TESTS OK (2 tests, 0 skippés)` ; `Scripts/check-tests.sh` → `TESTS OK (16 tests, 0 skippés)`
+- Limites connues : la divergence d'une conversation à graine fixe sur un long horizon reste à mesurer (T-3.4)
+- Pas d'agent : 0 · appels d'outils : —

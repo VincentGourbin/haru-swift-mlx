@@ -11,6 +11,7 @@ sous-répertoires accumulent les conclusions durables.
 - [Référence haru_mlx sur M3 Max](benchmarks/baseline-python-m3max.md) — bf16 vivant p50 55,7 / p99 63 ms, dos à dos 44,5 ; 8 bits 41,3 / 30,6 ; `feed` + chauffe : bf16 44,7, 8 bits 29,3 ms ; pic 11,2 / 6,8 Go ; ≈ 79 % des 300 Go/s.
 
 ## Decisions
+- [Aléa partagé avec Python](decisions/rng.md) — mêmes clés, même `categorical`, bf16 identique ; `normal` fp32 à ≤ 1 ulp (1 valeur sur 1152 : cœur MLX 0.32.2 en Swift contre 0.32.4) ; pas de rejeu.
 - [Organisation du port](decisions/port-layout.md) — 100 % Swift dans le processus, référence haru_mlx sur la même machine, pas de mlx-swift-lm, client Core Audio amont copié.
 
 ## Pitfalls

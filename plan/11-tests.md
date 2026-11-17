@@ -17,10 +17,10 @@ les deux côtés sont MLX sur le même GPU, l'écart attendu en fp32 est de l'or
 écart de 1e-3 signale une erreur de port, pas de l'arrondi.
 
 ## Aléa
-T-0.5 tranche : si `MLXRandom.key(s)` + `split` + `normal` donnent les mêmes tirages qu'en Python,
-les tests de session comparent des conversations complètes à graine fixe ; sinon le bruit est
-rejoué depuis la fixture (`NoiseSource.replay`) et la porte est « bit-identique à graine fixe »
-côté Swift seulement (T32).
+Tranché par T-0.5 (`docs/knowledge/decisions/rng.md`) : clés, bf16 et `categorical` identiques à
+Python, `normal` fp32 à ≤ 1 ulp. Les tests de session comparent 50 trames à graine fixe avec
+tolérance ; au-delà, « bit-identique à graine fixe » côté Swift (T32). Pas de rejeu tant que T-3.4
+ne montre pas de divergence précoce.
 
 ## Temps réel
 - Banc `haru bench --cadence live|burst --minutes N` : pas par trame, p50/p95/p99/max, pic

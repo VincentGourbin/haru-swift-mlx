@@ -14,3 +14,7 @@
 ## 2026-11-17 — T-0.2, mesure de référence
 - haru_mlx sur M3 Max : bf16 vivant p50 55,7 ms (dos à dos 44,5), 8 bits 41,3 (30,6) ; `feed` + chauffe 44,7 / 29,3 ms ; pic MLX 11,2 / 6,8 Go. Le piège 20 est confirmé (+25 / +35 % en vivant).
 - G-0 levée : bf16 par défaut (p99 vivant ≈ 63 ms, porte 90 ms), dépôt public, voix de test locale hors dépôt, app autonome.
+
+## 2026-11-17 — T-0.4 et T-0.5
+- T-0.4 : cartes des 9 langues et ids du system prompt identiques à haru_mlx (9 cartes + 8 chaînes limites).
+- T-0.5 : aléa MLX partagé — clés, bf16, `categorical` identiques ; `normal` fp32 : 1 valeur sur 1152 à 1 ulp. mlx-swift 0.32.3 embarque le cœur MLX v0.32.2 (Python : 0.32.4), cause probable. Pas de rejeu (`decisions/rng.md`).
