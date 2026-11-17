@@ -9,7 +9,7 @@ mlx-swift is a validated range `0.31.6..<0.33.0` (same as sperid; host apps pin 
 ## Tests
 `Scripts/check-tests.sh [Suite]` → `Scripts/run-tests.sh` (serial swift-testing, wall-clock watchdog, relays every `HARU_*` variable as `TEST_RUNNER_HARU_*`). Tiers: weight-free (always green), checkpoint-backed (`Real*Tests.swift`, gated on `HARU_MODELS_DIR`), live audio (manual, GATE). `xcodebuild test` relaunches crashed workers and still prints ✔ — trust `xcrun xctest`.
 ## Model weights
-`$HARU_MODELS_DIR/higurashi-ai/Haru-4B/` (default `~/Library/Caches/models`): `model.safetensors` (10.54 GB bf16, 1022 tensors), `config.json`, `tokenizer.json`. Never commit a path, a weight, a voice clip or a real recording. No upload, release or push without Vincent's explicit go.
+`$HARU_MODELS_DIR/higurashi-ai/Haru-4B/` (default `~/Library/Caches/models`): `model.safetensors` (10.54 GB bf16, 1022 tensors), `config.json`, `tokenizer.json`. This repository is **public** (since 2026-11-17): never commit a local path, a weight, a voice clip or any audio, real or generated. The test voice is a local file named by `HARU_TEST_VOICE`, outside the repository. Default precision: bf16. No upload or release without Vincent's explicit go.
 ## Architecture
 Sources/HaruCore/{Configuration,Loading} now; {Models/{Backbone,Codec,Head},Session,Sampling,Prompt,Runtime} as the milestones land; Sources/HaruAudio (Core Audio duplex, playout — Jalon 4); Sources/HaruCLI (`haru`); Sources/HaruStudio (Jalon 6); Tests/HaruTests; parity/ (tiny fixtures, Python-generated only); Scripts/reference (Python dumps).
 ## Key implementation facts (do not re-derive)

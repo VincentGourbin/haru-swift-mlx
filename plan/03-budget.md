@@ -39,7 +39,7 @@ l'horloge GPU (piège 20).
 ## Portes
 | Porte | Valeur |
 |---|---|
-| p99 du pas à cadence vivante, 10 min, 8 bits | ≤ 90 ms (laisse le réveil, la marge et le rattrapage) |
+| p99 du pas à cadence vivante, 10 min, bf16 (D8) | ≤ 90 ms (laisse le réveil, la marge et le rattrapage) |
 | p99 à 60 min (KV pleine) | ≤ 100 ms |
 | sous-alimentations sur 10 min, périphériques filaires | 0 |
 | latence de réponse médiane (filaire) | ≤ amont mesuré + 10 ms |

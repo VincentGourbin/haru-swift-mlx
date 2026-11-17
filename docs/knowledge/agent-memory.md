@@ -8,7 +8,9 @@
 - Copier depuis les dépôts frères (`reference/`), jamais de dépendance lourde ; mlx-swift dans la
   plage validée `0.31.6..<0.33.0`.
 - Aucun chiffre sans profiler et protocole ; un levier < 5 % est retiré avec sa mesure.
-- Rien de publié (push, upload HF, release) sans accord explicite. Dépôt **local** pour l'instant.
+- Dépôt GitHub **public** depuis le 2026-11-17 : aucun chemin local, poids, extrait de voix ni audio
+  généré dans le dépôt. Pas d'upload HF ni de release sans accord explicite.
+- Décisions G-0 : bf16 par défaut, voix de test locale via `HARU_TEST_VOICE`, app autonome (D8-D11).
 
 ## État (2026-11-17)
 - T-0.1 validée (squelette, `haru info`) ; poids téléchargés ; T-0.2 en attente d'accord (venv amont).
