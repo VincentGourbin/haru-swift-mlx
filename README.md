@@ -17,22 +17,26 @@ whole model inside the app, so it can be embedded in other apps and, later, stud
 
 | Part | Status |
 |---|---|
-| Configuration, checkpoint inventory (`haru info`) | ✅ |
-| Weight conversion plan | 🔜 Jalon 0 |
-| VibeVoice codec (streaming) | 🔜 Jalon 1 |
-| Qwen3.5 backbone, Haru model | 🔜 Jalon 2 |
-| MeanFlow head, prompt, session, offline wav → wav | 🔜 Jalon 3 |
-| Live conversation (Core Audio, in-process) | 🔜 Jalon 4 |
-| 8-bit, reference profiles, endurance | 🔜 Jalon 5 |
-| App, API | 🔜 Jalon 6 |
+| Configuration, weights (`haru info`, `haru download`) | ✅ pinned revision, SHA-256 |
+| VibeVoice codec (streaming) | ✅ bf16 bit-exact with haru_mlx |
+| Qwen3.5 backbone, MeanFlow head | ✅ fp32 parity ~1e-5, same top-1 in bf16 |
+| Session, offline wav → wav (`haru run`) | ✅ |
+| Live conversation (`haru talk`, Core Audio in-process) | ✅ step 46.5 ms (bf16), reply latency 66 ms median |
+| Test app (`Haru Studio`) | ✅ first version |
+| 8-bit (`--precision int8`) | ✅ step 32.9 ms; profiles and endurance to come |
+| Compiled per-layer steps, reference profiles | 🔜 Jalon 5 |
 
 The porting plan is in [`PLAN.md`](PLAN.md) (French).
 
-## Build
+## Build and run
 
 ```bash
 Scripts/check-build.sh                      # xcodebuild Release (not `swift build`: MLX's metallib)
-.xcodebuild/Build/Products/Release/haru info
+H=.xcodebuild/Build/Products/Release/haru
+$H download                                 # 10.5 GB, resumable, SHA-256 checked
+$H run user.wav reply.wav --voice voice.wav --stereo      # offline
+$H talk --voice voice.wav                   # live, wired headphones recommended
+Scripts/package-app.sh && open ".build/Haru Studio.app"   # the app
 ```
 
 Weights live in `$HARU_MODELS_DIR/higurashi-ai/Haru-4B` (default `~/Library/Caches/models`).

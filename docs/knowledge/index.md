@@ -8,6 +8,7 @@ Journal d'ingénierie du portage de Haru-4B (bundle OKF). `log.md` porte l'histo
 sous-répertoires accumulent les conclusions durables.
 
 ## Benchmarks
+- [Port Swift en temps réel sur M3 Max](benchmarks/swift-live-m3max.md) — bf16 vivant 46,5 / 47,7 ms (+4 % sur Python), int8 32,9 / 33,8 ; latence de réponse Core Audio médiane 66 ms ; 0 trame en retard.
 - [Référence haru_mlx sur M3 Max](benchmarks/baseline-python-m3max.md) — bf16 vivant p50 55,7 / p99 63 ms, dos à dos 44,5 ; 8 bits 41,3 / 30,6 ; `feed` + chauffe : bf16 44,7, 8 bits 29,3 ms ; pic 11,2 / 6,8 Go ; ≈ 79 % des 300 Go/s.
 
 ## Decisions

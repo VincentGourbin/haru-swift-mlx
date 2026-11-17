@@ -19,5 +19,12 @@
 - D11 (Q4, 2026-11-17). Jalon 6 : **app autonome** `haru-studio` ; l'intégration Fluxforge (T-6.4)
   reste une fiche ultérieure.
 
+- D12 (2026-11-17). Parité sur les vrais poids (dumps haru_mlx sous `.local-runs/parity`, gated
+  `HARU_PARITY_DIR`) plutôt que des fixtures tiny : même machine, plus rapide ; les fixtures tiny
+  restent à faire pour une CI sans poids.
+- D13 (2026-11-17). À la demande de Vincent (« rends-moi la main quand l'app de test est faite »),
+  les GATE G-1 à G-3 sont remplacées par des portes automatiques (parité, simulation vivante,
+  Core Audio sur périphérique virtuel) et une écoute groupée à la livraison de l'app.
+
 ## Ouvertes
-Aucune.
+- Q5. Écoute groupée : aller-retour codec, `haru run`, conversation dans l'app (remplace G-1 à G-3).

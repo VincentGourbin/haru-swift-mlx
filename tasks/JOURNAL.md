@@ -41,3 +41,10 @@
 - Validation : `Scripts/check-tests.sh` → `TESTS OK (23 tests, 0 skippés)` ; `HARU_MODELS_DIR=… Scripts/check-tests.sh RealWeightsTests` → `TESTS OK (1 tests, 0 skippés)` ; `haru download --verify` → `DOWNLOAD OK (4 files present, SHA-256 verified, revision 8d6e83bc)`
 - Limites connues : le chemin réseau réel n'est pas rejoué (les poids étaient déjà là : `hf download`)
 - Pas d'agent : 0 · appels d'outils : —
+
+## Jalons 1-4 + app de test — 2026-11-17 — validés (portes automatiques, D12/D13)
+- Fait : codec (`Models/Codec/*`), backbone (`Models/Backbone/*`), tête (`Models/Head/*`), `HaruModel`, `WeightStore`, `Dense`, échantillonnage (`Sampling/TextSampling.swift`), `AudioFile`, `DuplexSession`, `MLXWorker`, `HaruEngine`, `LiveConversation`, `HaruAudio` (client Core Audio amont), `haru run / talk / devices / simulate`, app `HaruStudio` + `Scripts/package-app.sh`, dumps `Scripts/reference/{dump_parity,dump_session}.py`
+- Bugs réels rencontrés : bf16 non bit-exact (noyaux Metal compilés différemment, piège consigné) ; `self` capturé avant init ; voix chargée deux fois (`@Observable` déclenche `didSet` dans `init`) ; voix illisible dans l'app depuis `~/Downloads` (TCC) ; boucle zsh sans découpage d'arguments
+- Validation : `RealCodecParityTests` (bf16 0, fp32 ≤ 1,4e-5) ; `RealModelParityTests` (fp32 ≤ 1,4e-5, top-1 identique) ; session fp32 : 34 trames identiques à Python ; `haru simulate` bf16 3 passes, 0 trame en retard ; `haru talk` (périphérique virtuel) latence médiane 66 ms ; app « Ready » en 2,5 s ; `Scripts/check-tests.sh` → `TESTS OK (29 tests)`
+- Limites connues : pas de test au vrai micro ; chemins non compilés ; pas de fixtures tiny ; 1 sous-alimentation au démarrage de `haru talk`
+- Pas d'agent : 0 · appels d'outils : —
