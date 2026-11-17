@@ -1,0 +1,22 @@
+# CLAUDE.md
+## Project Overview
+Swift MLX port of **Haru-4B** (`higurashi-ai/Haru-4B`, Apache-2.0), a full-duplex spoken dialogue model, with one goal: a **real-time conversation, 100 % Swift, in-process** on Apple Silicon (no Python server, unlike upstream's `Haru.app`). Every 133 ms (7.5 Hz) one user audio frame goes in and one model frame (audio + text token) comes out: user latent + model latent + text token are summed into ONE position of a Qwen3.5-4B backbone (24 Gated DeltaNet + 8 attention layers); the hidden state gives the next text token (tied embedding) and the next 64-dim audio latent (one-step MeanFlow MLP head); a causal VibeVoice codec (24 kHz, 3200 samples per latent) encodes the microphone and decodes the model's voice frame by frame.
+**PLAN.md is the porting spec** (a table of contents into `plan/`) — read `plan/02.x` (architecture facts), `plan/02.8-temps-reel.md` and `plan/12-pieges.md` before touching model code. Numerical reference: `haru_mlx` (Python MLX) of https://github.com/higurashi-ai/Haru @ `7fe6b76` (`reference/haru`, created by `Scripts/link-references.sh`). Parity is tensor-by-tensor against Python MLX **on the same machine**.
+## Build & Run
+mlx-swift is a validated range `0.31.6..<0.33.0` (same as sperid; host apps pin 0.31.6 exact). Build with `xcodebuild`, NOT `swift build` (SPM binaries cannot find MLX's `default.metallib`):
+  Scripts/check-build.sh   # Release, binary: .xcodebuild/Build/Products/Release/haru
+  .xcodebuild/Build/Products/Release/haru info   # checks the local checkpoint, prints bytes per part
+## Tests
+`Scripts/check-tests.sh [Suite]` → `Scripts/run-tests.sh` (serial swift-testing, wall-clock watchdog, relays every `HARU_*` variable as `TEST_RUNNER_HARU_*`). Tiers: weight-free (always green), checkpoint-backed (`Real*Tests.swift`, gated on `HARU_MODELS_DIR`), live audio (manual, GATE). `xcodebuild test` relaunches crashed workers and still prints ✔ — trust `xcrun xctest`.
+## Model weights
+`$HARU_MODELS_DIR/higurashi-ai/Haru-4B/` (default `~/Library/Caches/models`): `model.safetensors` (10.54 GB bf16, 1022 tensors), `config.json`, `tokenizer.json`. Never commit a path, a weight, a voice clip or a real recording. No upload, release or push without Vincent's explicit go.
+## Architecture
+Sources/HaruCore/{Configuration,Loading} now; {Models/{Backbone,Codec,Head},Session,Sampling,Prompt,Runtime} as the milestones land; Sources/HaruAudio (Core Audio duplex, playout — Jalon 4); Sources/HaruCLI (`haru`); Sources/HaruStudio (Jalon 6); Tests/HaruTests; parity/ (tiny fixtures, Python-generated only); Scripts/reference (Python dumps).
+## Key implementation facts (do not re-derive)
+See `plan/02.2`–`02.7` and `plan/12-pieges.md`: fused projections (GDN `in_proj` = qkv|z|b|a, attention `qkv` with per-head [query, gate], MLP `gate_up`, head `ada` stacked); backbone RMSNorm gains stored as fp32 `1 + w`; GDN memory and decay in fp32; the upstream GDN Metal kernel has NO Kahan summation (mlx-swift-lm's has — do not copy that one); RoPE on 64 of 256 dims, non-interleaved (`nn.RoPE` default), MRoPE collapses to 1-D for text; PAD/EOP logits recomputed in fp32; the head's conditioning sum order (cond + t, + interval, + step, + omega) is part of the result; one MLX thread owns model and session.
+## Real time — read before measuring
+The loop runs at 7.5 Hz, so the GPU idles ~70 % of the time and its clock drops: **measure step time at live cadence**, not back-to-back. Gate on p99 step time and underruns over a long session (the KV cache grows on 8 layers), never on the mean. Reply latency is measured on the audio clock (ADC of the last user sample → DAC of the first answering sample), as upstream does. Profiler (`swift-mlx-profiler`) first, `print` never; A/B/B/A, ±2 % spread; outputs under `.local-runs/bench.noindex/`. Record findings in docs/knowledge/log.md.
+## Engineering Knowledge Base
+docs/knowledge/ is an OKF bundle (index.md, log.md, decisions/, pitfalls/, benchmarks/, investigations/), in French. `docs/knowledge/agent-memory.md`: read it at the start of a session. The shared catalogue of measured techniques is the `mlx-swift-audit` skill (`references/techniques.md`); `plan/13-optimisations.md` says which ones apply here.
+## Execution by agents
+`AGENTS.md` (French) is the executor's manual: one card (`tasks/T-x.y.md`) at a time, one `plan/` file per step, validations in order, ⛔ GATE = stop and ask in `tasks/ASK.md`.

@@ -1,0 +1,9 @@
+# Journal
+
+## 2026-11-17 — création du projet
+- Lecture de `higurashi-ai/Haru` @ `7fe6b76` : haru_mlx (modèle, session, backbone Qwen3.5, codec VibeVoice, tête MeanFlow, noyaux Metal GDN et mélangeur depthwise, plan de poids), client Core Audio `swift/Shared/Audio.swift`, cadencement `worker.py` / `backends.py` / `native.py`.
+- Poids téléchargés (`hf download`, 10,54 Go) sous `$HARU_MODELS_DIR/higurashi-ai/Haru-4B`.
+- `haru info` (MESURE de l'en-tête) : 1022 tenseurs, 5 270 M paramètres ; embedding 1,27 Go, backbone 7,14 Go, tête 0,73 Go, codec 2 × 0,69 Go, projecteurs 0,03 Go. Soit ≈ 10,5 Go lus par trame en bf16 (CALCUL, `plan/03-budget.md`).
+- Machine : M3 Max 14 CPU / 30 GPU, 96 Go — bande passante annoncée 300 Go/s contre 400 pour le M1 Max des chiffres amont (43 / 31 ms par trame) : le bf16 risque d'être plus serré ici (CALCUL ≈ 57 ms).
+- Le GDN de mlx-swift-lm (vendored dans qwen38) diffère du noyau de haru_mlx (somme de Kahan) : piège n° 3.
+- Mesure de référence Python reportée (installation de haru_mlx refusée par le mode auto, en attente de l'accord de Vincent : `tasks/ASK.md`).
