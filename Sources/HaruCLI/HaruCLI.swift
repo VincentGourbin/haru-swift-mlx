@@ -6,11 +6,11 @@ import Foundation
 import HaruCore
 
 @main
-struct HaruCLI: ParsableCommand {
+struct HaruCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "haru",
         abstract: "Haru-4B full-duplex spoken dialogue on Apple Silicon (MLX).",
-        subcommands: [Info.self]
+        subcommands: [Info.self, Card.self]
     )
 }
 
@@ -54,5 +54,46 @@ struct Info: ParsableCommand {
             print("")
             print("PLAN OK (\(conversions.count) parameters from \(header.entries.count) tensors)")
         }
+    }
+}
+
+/// `haru card`: render a character card (an example card or a JSON file) and count its tokens.
+struct Card: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Render a character card in one of the nine languages and print its system-prompt tokens."
+    )
+
+    @Option(help: "Language code (ja, en, zh, ko, es, fr, de, pt, ru).")
+    var language = "en"
+
+    @Option(help: "A card JSON file (persona, name, gender, backchannel, other_name, relationship, situation); default: the language's example card.")
+    var file: String?
+
+    @Option(help: "Checkpoint directory (default: $HARU_MODELS_DIR/higurashi-ai/Haru-4B).")
+    var model: String?
+
+    @Flag(help: "Print the token ids too.")
+    var ids = false
+
+    func run() async throws {
+        let library = try CardLibrary.bundled()
+        let card: CharacterCard
+        if let file {
+            let url = URL(fileURLWithPath: (file as NSString).expandingTildeInPath)
+            card = try JSONDecoder().decode(CharacterCard.self, from: Data(contentsOf: url))
+        } else {
+            guard let preset = try library.presets(language: language).sorted(by: { $0.key < $1.key }).first?.value else {
+                throw HaruError.invalidRequest("no example card for \(language)")
+            }
+            card = preset
+        }
+        let text = try library.render(card, language: language)
+        print(text)
+        let directory = model.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
+            ?? ModelsDirectory.resolve().appendingPathComponent(HaruReference.repository, isDirectory: true)
+        let tokens = try await HaruTokenizer.load(directory: directory).systemPromptIds(text)
+        print("")
+        print("\(tokens.count) prompt positions (prefilled before frame 0)")
+        if ids { print(tokens.map(String.init).joined(separator: " ")) }
     }
 }

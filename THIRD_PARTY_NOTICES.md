@@ -11,6 +11,9 @@ follow https://github.com/higurashi-ai/Haru @ `7fe6b76`.
 - Copyright (c) higurashi-ai
 - License: Apache License 2.0 (weights `higurashi-ai/Haru-4B` too)
 
+`Sources/HaruCore/Resources/Cards/` holds upstream's card templates and example cards
+(`assets/card_templates.json`, `assets/cards/<language>.json`), unchanged except for the file names.
+
 Files derived from Haru carry a header naming the upstream file. The Apache-2.0 text and the NOTICE
 obligations apply to those parts.
 

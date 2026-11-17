@@ -20,3 +20,10 @@
 - Validation : 10 JSON, `frames` = 434 chacun ; A/B/B/A vivant bf16 55,9 / 55,5 ms (0,7 %), 8 bits 41,1 / 41,6 ms (1,2 %)
 - Limites connues : chauffe bf16 (65,8 ms) en une seule passe, inexpliquée ; pas de voix dans le prompt ; utilisateur = bruit
 - Pas d'agent : 0 · appels d'outils : —
+
+## T-0.4 — Tokenizer, cartes, ids du system prompt — 2026-11-17 — validée
+- Fait : `Prompt/CharacterCard.swift` (`CharacterCard`, `CardTemplate.render`, `CardLibrary`), `Prompt/HaruTokenizer.swift` (swift-transformers 1.4.0), ressources `Resources/Cards/` (amont), `Scripts/reference/dump_cards.py` → `Tests/HaruTests/Fixtures/cards.json`, `CardTests` + `RealTokenizerTests`, `haru card`
+- Bug réel rencontré : aucun
+- Validation : `Scripts/check-build.sh` → `BUILD OK` ; `Scripts/check-tests.sh` → `TESTS OK (14 tests, 0 skippés)` ; `HARU_MODELS_DIR=… Scripts/check-tests.sh RealTokenizerTests` → `TESTS OK (2 tests, 0 skippés)` (9 cartes + 8 chaînes : ids identiques, aller-retour decode)
+- Limites connues : le détokeniseur de flux (PAD/EOP → espace, U+FFFD retenu) est en T-3.2
+- Pas d'agent : 0 · appels d'outils : —

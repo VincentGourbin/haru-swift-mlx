@@ -35,7 +35,9 @@ let package = Package(
                 .product(name: "MLXFast", package: "mlx-swift"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
                 .product(name: "MLXProfiler", package: "swift-mlx-profiler"),
-            ]
+            ],
+            // Upstream card templates and example cards (Apache-2.0, higurashi-ai/Haru @ 7fe6b76).
+            resources: [.copy("Resources/Cards")]
         ),
         // MARK: - CLI Tools
         .executableTarget(
@@ -48,7 +50,8 @@ let package = Package(
         // MARK: - Tests
         .testTarget(
             name: "HaruTests",
-            dependencies: ["HaruCore"]
+            dependencies: ["HaruCore"],
+            resources: [.copy("Fixtures")]
         ),
     ]
 )
