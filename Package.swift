@@ -15,6 +15,8 @@ let package = Package(
         .library(name: "HaruAudio", targets: ["HaruAudio"]),
         // MARK: - CLI Tools
         .executable(name: "haru", targets: ["HaruCLI"]),
+        /// macOS app: talk with Haru (card, voice, devices, live transcript); package with Scripts/package-app.sh.
+        .executable(name: "haru-studio", targets: ["HaruStudio"]),
     ],
     dependencies: [
         // Same validated range as sperid-swift-mlx: host apps (Fluxforge Studio) pin 0.31.6 exact.
@@ -49,6 +51,11 @@ let package = Package(
                 "HaruAudio",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
+        ),
+        .executableTarget(
+            name: "HaruStudio",
+            dependencies: ["HaruCore", "HaruAudio"],
+            exclude: ["Info.plist"]
         ),
         // MARK: - Tests
         .testTarget(

@@ -20,6 +20,9 @@ public final class LiveConversation: @unchecked Sendable {
     fileprivate var stopped = false
     /// Step times (seconds) of the frames produced so far, read after `stop()`.
     public private(set) var steps: [Double] = []
+    /// When true, the 24 kHz user audio fed to the model is kept (`userAudio`, read after `stop()`).
+    public var recordsUser = false
+    public private(set) var userAudio: [Float] = []
 
     init(sampleRate: Int, frameSamples: Int) {
         self.sampleRate = sampleRate
@@ -64,6 +67,7 @@ public final class LiveConversation: @unchecked Sendable {
     }
 
     fileprivate func record(_ seconds: Double) { steps.append(seconds) }
+    fileprivate func keep(_ pcm: [Float]) { if recordsUser { userAudio.append(contentsOf: pcm) } }
 }
 
 struct LivePump {
@@ -91,6 +95,7 @@ struct LivePump {
                 for i in 0 ..< even / 2 { pcm[i] = (raw[2 * i] + raw[2 * i + 1]) * 0.5 }
                 raw.removeFirst(even)
                 session.feed(pcm)
+                conversation.keep(pcm)
                 fed += pcm.count
             }
             while session.framesReady > 0 {

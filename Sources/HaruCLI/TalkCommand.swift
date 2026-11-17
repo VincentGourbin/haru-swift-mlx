@@ -31,6 +31,7 @@ struct Talk: AsyncParsableCommand {
     @Option(help: "Stop after this many seconds (default: until Ctrl-C).") var seconds: Double?
 
     func run() async throws {
+        setvbuf(stdout, nil, _IONBF, 0)  // the live transcript and the status lines in order
         guard let inDevice = findDevice(input, input: true), let outDevice = findDevice(output, input: false) else {
             throw HaruError.invalidRequest("audio device not found (haru devices lists them)")
         }
@@ -50,7 +51,7 @@ struct Talk: AsyncParsableCommand {
                                 frameSamples: engine.frameSamples * 2, stepMs: engine.stepSeconds * 1000) { feeder.push($0) }
         let playback = DispatchQueue(label: "haru.playback", qos: .userInteractive)
         let conversation = try await engine.begin(settings) { frame in
-            if !frame.text.isEmpty { FileHandle.standardOutput.write(Data(frame.text.utf8)) }
+            if !frame.text.isEmpty { print(frame.text, terminator: "") }
             playback.async { audio.receive(index: frame.index, pcm: upsample2x(frame.audio), step: frame.seconds) }
         }
         feeder.target = conversation
