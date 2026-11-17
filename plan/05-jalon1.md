@@ -5,7 +5,7 @@ Pourquoi d'abord : c'est la partie la plus éloignée de ce qu'on sait déjà fa
 
 | Fiche | Contenu | Porte |
 |---|---|---|
-| T-1.1 | Fixtures tiny : `Scripts/reference/make_tiny.py` (dérivé de `tests/parity/make_tiny_checkpoint.py` + `tiny_config.json`) et `dump_codec.py` qui fait tourner **haru_mlx** (pas PyTorch) ; `check-fixtures.sh`, `check-parity.sh` | `FIXTURES OK` |
+| T-1.1 | Fixtures tiny : `Scripts/reference/make_tiny.py` — le générateur amont exige torch **et** le paquet PyTorch `haru` ; le nôtre tire des tenseurs aléatoires (numpy, graine fixe) en disposition checkpoint, noms et formes déduits de `tiny_config.json` par l'inverse du plan de T-0.3 — puis `dump_codec.py` qui fait tourner **haru_mlx** ; `check-fixtures.sh`, `check-parity.sh` | `FIXTURES OK` |
 | T-1.2 | `CausalConv1d`, `CausalConvTranspose1d` (disposition matrice) + tests de forme d'état | `PARITY OK conv` ≤ 1e-6 fp32 |
 | T-1.3 | Mélangeur depthwise : noyau Metal amont (`MLXFast.metalKernel`, source copiée) + repli tableaux ; `Block` | noyau = repli ≤ 1e-6 ; `PARITY OK block` |
 | T-1.4 | `Encoder`, `Decoder`, `VibeVoiceCodec.encode/decode` clip entier | `PARITY OK codec` tiny ≤ 1e-5 fp32 |

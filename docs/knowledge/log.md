@@ -7,3 +7,6 @@
 - Machine : M3 Max 14 CPU / 30 GPU, 96 Go — bande passante annoncée 300 Go/s contre 400 pour le M1 Max des chiffres amont (43 / 31 ms par trame) : le bf16 risque d'être plus serré ici (CALCUL ≈ 57 ms).
 - Le GDN de mlx-swift-lm (vendored dans qwen38) diffère du noyau de haru_mlx (somme de Kahan) : piège n° 3.
 - Mesure de référence Python reportée (installation de haru_mlx refusée par le mode auto, en attente de l'accord de Vincent : `tasks/ASK.md`).
+- SwiftPM a résolu mlx-swift **0.32.3** (plage 0.31.6..<0.33.0), swift-transformers 1.4.0, swift-mlx-profiler 1.5.1.
+- T-0.3 : plan de conversion porté, vérifié sur l'en-tête réel (898 paramètres, 0 écart) : les faits de `plan/02.6` sont confirmés par le checkpoint, pas seulement par lecture.
+- Le générateur tiny amont (`make_tiny_checkpoint.py`) exige torch et le paquet PyTorch `haru` : T-1.1 écrira son propre générateur numpy.

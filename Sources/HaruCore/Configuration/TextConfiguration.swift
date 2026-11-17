@@ -46,6 +46,7 @@ public struct TextConfiguration: Decodable, Sendable, Equatable {
         case linearKeyHeads = "linear_num_key_heads", linearValueHeads = "linear_num_value_heads"
         case partialRotaryFactor = "partial_rotary_factor", ropeParameters = "rope_parameters"
         case ropeTheta = "rope_theta", eosTokenId = "eos_token_id"
+        case fullAttentionInterval = "full_attention_interval"
     }
 
     enum RopeKeys: String, CodingKey {
@@ -60,9 +61,12 @@ public struct TextConfiguration: Decodable, Sendable, Equatable {
         numHiddenLayers = try c.decode(Int.self, forKey: .numHiddenLayers)
         numAttentionHeads = try c.decode(Int.self, forKey: .numAttentionHeads)
         numKeyValueHeads = try c.decode(Int.self, forKey: .numKeyValueHeads)
-        headDim = try c.decode(Int.self, forKey: .headDim)
+        // Defaults as in lm_config.from_dict: head_dim = hidden / heads, layer_types from the interval.
+        headDim = try c.decodeIfPresent(Int.self, forKey: .headDim) ?? hiddenSize / numAttentionHeads
         rmsNormEps = try c.decodeIfPresent(Float.self, forKey: .rmsNormEps) ?? 1e-6
-        layerTypes = try c.decode([LayerType].self, forKey: .layerTypes)
+        let interval = try c.decodeIfPresent(Int.self, forKey: .fullAttentionInterval) ?? 4
+        layerTypes = try c.decodeIfPresent([LayerType].self, forKey: .layerTypes)
+            ?? (0..<numHiddenLayers).map { ($0 + 1) % interval == 0 ? .fullAttention : .linearAttention }
         linearConvKernelDim = try c.decode(Int.self, forKey: .linearConvKernelDim)
         linearKeyHeadDim = try c.decode(Int.self, forKey: .linearKeyHeadDim)
         linearValueHeadDim = try c.decode(Int.self, forKey: .linearValueHeadDim)

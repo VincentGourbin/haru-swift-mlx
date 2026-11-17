@@ -30,6 +30,12 @@ autant que les octets.
 - États GDN : 24 × 32 × 128 × 128 × 4 o = 50 Mo, constants (lus et écrits par trame).
 - État du codec : < 10 Mo.
 
+## Comparabilité des mesures
+`baseline.py` (T-0.2) mesure `step(user_audio)`, encodage complet de la trame utilisateur inclus ;
+le chemin vivant Swift étale l'avant de l'encodeur avec `feed()`. Comparer chemin à chemin : `--feed`
+(blocs de 2 ms au fil de l'horloge) côté Python, et `--warm-ms` pour séparer le réveil du CPU de
+l'horloge GPU (piège 20).
+
 ## Portes
 | Porte | Valeur |
 |---|---|

@@ -23,7 +23,7 @@ est une fiche du Jalon 5 avec porte (p99 −5 % à cadence vivante ou retrait).
 | O2 | Tête de sortie (embedding liée) plus basse précision ou restreinte | T12 | 1,27 Go/trame en bf16 ; PAD/EOP restent en fp32 | jetons qui changent ; pas de restriction de vocabulaire sans mesure |
 | O3 | `asyncEval` : trame t+1 lancée dès que la trame user est prête, lecture CPU (jeton, DRY, texte) et décodage audio en recouvrement | Q T15, V | sortir les syncs du chemin critique | exactitude du DRY (pénalité à t+1 dépend du jeton t) |
 | O4 | Compilé vs non compilé, noyaux vs repli | Q R1-R3, R9 | les rejets Q sont en régime débit ; ici 1 position | A/B obligatoire |
-| O5 | Pack préquantifié (chargement direct) | Y T12 bis, piège 12 | démarrage, pic de chargement | nom du pack = profil |
+| O5 | Pack préquantifié (chargement direct) | Y, piège 12 du catalogue | démarrage, pic de chargement | nom du pack = profil |
 | O6 | Maintien d'horloge GPU (charge de garde ou cadence) | nouveau | p99 si la DVFS coûte | énergie, chaleur : mesurer d'abord (piège 20) |
 | O7 | KV quantifié 8 bits | Y/Q T10 | 0,88 → 0,45 Go à 60 min, −1,5 ms en fin de session | parité ; gain faible : seulement si T-5.6 le montre |
 | O8 | Lecture des poids `pread` concurrents | T22 | chargement à froid | — |

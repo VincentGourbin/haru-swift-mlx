@@ -23,6 +23,9 @@ struct Info: ParsableCommand {
     @Option(help: "Checkpoint directory (default: $HARU_MODELS_DIR/higurashi-ai/Haru-4B).")
     var model: String?
 
+    @Flag(help: "Also check the weight conversion plan against the model's parameters.")
+    var plan = false
+
     func run() throws {
         let directory = model.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true) }
             ?? ModelsDirectory.resolve().appendingPathComponent(HaruReference.repository, isDirectory: true)
@@ -44,5 +47,12 @@ struct Info: ParsableCommand {
         }
         print(String(format: "total                   %10d %12.1f M %10.2f GB", header.entries.count,
                      Double(inventory.totalParameters) / 1e6, Double(inventory.totalBytes) / 1e9))
+
+        if plan {
+            let conversions = try WeightPlan.conversionPlan(shapes: header.entries.mapValues(\.shape))
+            try WeightPlan.check(conversions, expected: WeightPlan.parameterShapes(config: config))
+            print("")
+            print("PLAN OK (\(conversions.count) parameters from \(header.entries.count) tensors)")
+        }
     }
 }
