@@ -6,6 +6,7 @@ import ArgumentParser
 import Foundation
 import HaruAudio
 import HaruCore
+import MLX
 
 struct Devices: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "List the audio devices.")
@@ -65,7 +66,7 @@ struct Talk: AsyncParsableCommand {
         if let seconds { DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { stop.signal() } }
         await withCheckedContinuation { c in DispatchQueue.global().async { stop.wait(); c.resume() } }
         audio.stop()
-        conversation.stop()
+        conversation.stopAndWait()
         let r = audio.report()
         let steps = conversation.steps.dropFirst(8).map { $0 * 1000 }.sorted()
         func pct(_ p: Double) -> Double { steps.isEmpty ? 0 : steps[min(steps.count - 1, Int(p * Double(steps.count)))] }
@@ -104,6 +105,7 @@ struct Simulate: AsyncParsableCommand {
     @OptionGroup var modelOptions: ModelOptions
     @OptionGroup var card: CardOptions
     @Option(help: "Samples per block at 48 kHz (128 = 2.7 ms, a small device buffer).") var block = 128
+    @Option(help: "Write every step time (ms) as a JSON array.") var stepsJson: String?
 
     func run() async throws {
         let precision: HaruPrecision = switch modelOptions.precision { case .bf16: .bf16; case .fp32: .fp32; case .int8: .int8 }
@@ -134,14 +136,17 @@ struct Simulate: AsyncParsableCommand {
         feeder.start()
         let total = Double(user24.count) / 24_000
         try await Task.sleep(nanoseconds: UInt64((total + 0.5) * 1e9))
-        conversation.stop()
-        try await Task.sleep(nanoseconds: 200_000_000)
+        conversation.stopAndWait()
 
         let frames = collector.frames.sorted { $0.0.index < $1.0.index }
         // Model frame k + 1 answers user frame k, complete at start + (k + 1) * frame.
         let delays = frames.dropFirst(9).map { f, at in
             at.timeIntervalSince(start.addingTimeInterval(Double(f.index) * frameSeconds)) * 1000
         }.sorted()
+        if let stepsJson {
+            try JSONSerialization.data(withJSONObject: conversation.steps.map { $0 * 1000 })
+                .write(to: URL(fileURLWithPath: stepsJson))
+        }
         let steps = conversation.steps.dropFirst(8).map { $0 * 1000 }.sorted()
         func pct(_ v: [Double], _ p: Double) -> Double { v.isEmpty ? 0 : v[min(v.count - 1, Int(p * Double(v.count)))] }
         let late = delays.filter { $0 > frameSeconds * 1000 }.count
@@ -155,7 +160,8 @@ struct Simulate: AsyncParsableCommand {
         let n = min(user24.count, reply.count)
         try AudioFile.writeWAV((0 ..< n).flatMap { [user24[$0], reply[$0]] },
                                to: URL(fileURLWithPath: (output as NSString).expandingTildeInPath), channels: 2)
-        print(String(format: "measured step (live) %.1f ms", engine.stepSeconds * 1000))
+        print(String(format: "measured step (live) %.1f ms; MLX active %.2f GB, cache %.2f GB, peak %.2f GB", engine.stepSeconds * 1000,
+                     Double(Memory.activeMemory) / 1e9, Double(Memory.cacheMemory) / 1e9, Double(Memory.peakMemory) / 1e9))
         print(String(format: "%d frames; step p50 %.1f / p99 %.1f / max %.1f ms; user frame complete -> model frame ready: p50 %.1f / p99 %.1f / max %.1f ms; %d later than a frame; dropped %d",
                      frames.count, pct(steps, 0.5), pct(steps, 0.99), steps.last ?? 0, pct(delays, 0.5), pct(delays, 0.99),
                      delays.last ?? 0, late, conversation.droppedSamples))

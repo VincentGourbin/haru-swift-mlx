@@ -27,3 +27,5 @@
 - Session fp32 à graine 0 : 34 premières trames identiques à Python (même prompt de 1618 positions, même prise de parole), puis divergence d'échantillonnage attendue.
 - Temps réel : voir `benchmarks/swift-live-m3max.md` — bf16 vivant 46,5 / 47,7 ms (Python 44,7 / 46,3), latence de réponse Core Audio 66 ms médiane.
 - App `Haru Studio` : prête (prompt préparé en 2,5 s avec 180 s de voix). Piège : une app lit `~/Downloads` seulement après consentement TCC ; l'invite ne s'affiche pas écran éteint ; choisir la voix par « Choose… » l'accorde.
+- Session de 5 min : le pas sautait de 46 à 57 ms après ~20 s (20 sous-alimentations) ; cause : l'horloge CPU baisse quand la pompe fait des siestes de 1 ms ; sonder en continu → 44,3 / 44,9 ms, latence 65 ms, 1 sous-alimentation. Python `--feed --warm-ms 30` y échappait parce qu'il attend activement en continu.
+- Courses corrigées avant la première utilisation : fin de conversation (attendre la sortie de la pompe avant de lire ses mesures), démarrage pendant une préparation (attendre la préparation en cours).

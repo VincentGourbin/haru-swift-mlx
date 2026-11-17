@@ -21,8 +21,8 @@ whole model inside the app, so it can be embedded in other apps and, later, stud
 | VibeVoice codec (streaming) | ✅ bf16 bit-exact with haru_mlx |
 | Qwen3.5 backbone, MeanFlow head | ✅ fp32 parity ~1e-5, same top-1 in bf16 |
 | Session, offline wav → wav (`haru run`) | ✅ |
-| Live conversation (`haru talk`, Core Audio in-process) | ✅ step 46.5 ms (bf16), reply latency 66 ms median |
-| Test app (`Haru Studio`) | ✅ first version |
+| Live conversation (`haru talk`, Core Audio in-process) | ✅ step 44.3 ms (bf16, p99 44.9 over 5 min); reply latency 65 ms median on a virtual device (real mic/headphones add their own latency) |
+| Test app (`Haru Studio`) | 🧪 first version: builds, loads, prepares card + voice; conversation not yet tried with a real microphone |
 | 8-bit (`--precision int8`) | ✅ step 32.9 ms; profiles and endurance to come |
 | Compiled per-layer steps, reference profiles | 🔜 Jalon 5 |
 

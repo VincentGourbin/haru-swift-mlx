@@ -18,6 +18,7 @@ public final class LiveConversation: @unchecked Sendable {
     private var count = 0
     private var dropped = 0
     fileprivate var stopped = false
+    private let finished = DispatchSemaphore(value: 0)
     /// Step times (seconds) of the frames produced so far, read after `stop()`.
     public private(set) var steps: [Double] = []
     /// When true, the 24 kHz user audio fed to the model is kept (`userAudio`, read after `stop()`).
@@ -50,6 +51,16 @@ public final class LiveConversation: @unchecked Sendable {
         os_unfair_lock_unlock(&lock)
     }
 
+    /// Stops and waits (at most `timeout`) for the pump to leave the MLX thread: `steps` and
+    /// `userAudio` are then complete and no longer written.
+    @discardableResult
+    public func stopAndWait(timeout: Double = 2) -> Bool {
+        stop()
+        return finished.wait(timeout: .now() + timeout) == .success
+    }
+
+    fileprivate func pumpFinished() { finished.signal() }
+
     /// Samples lost because the pump fell more than two seconds behind.
     public var droppedSamples: Int {
         os_unfair_lock_lock(&lock); defer { os_unfair_lock_unlock(&lock) }
@@ -74,7 +85,11 @@ struct LivePump {
     let session: DuplexSession
     let conversation: LiveConversation
     let onFrame: @Sendable (Frame) -> Void
-    var warm = 0.03
+    /// Seconds before a user frame completes during which the pump polls instead of napping. Default:
+    /// always (more than a frame). Napping 1 ms between audio blocks let the CPU clock drop after ~20 s
+    /// and the step rose from 46 to 57 ms (measured 2026-11-17; docs/knowledge/pitfalls/cpu-clock-drops-
+    /// between-frames.md); polling keeps it at 44 ms for one busy core. HARU_WARM_MS overrides it.
+    var warm = (ProcessInfo.processInfo.environment["HARU_WARM_MS"].flatMap(Double.init) ?? 140) / 1000
 
     /// Sleeps until `warm` before `date`, then polls.
     static func wait(until date: Date, warm: Double) {
@@ -84,11 +99,15 @@ struct LivePump {
     }
 
     func run() {
+        defer { conversation.pumpFinished() }
         var raw: [Float] = []
         raw.reserveCapacity(48_000)
         var fed = 0  // 24 kHz samples fed
         let rate = Double(conversation.sampleRate)
         while conversation.drain(into: &raw) {
+            // One pool per iteration: the pump is a single job for the whole conversation, so the Metal
+            // objects MLX autoreleases (~50 small evals per frame) are released as it goes.
+            let keepGoing: Bool = autoreleasepool {
             let even = raw.count / 2 * 2
             if even > 0 {
                 var pcm = [Float](repeating: 0, count: even / 2)
@@ -99,11 +118,14 @@ struct LivePump {
                 fed += pcm.count
             }
             while session.framesReady > 0 {
-                guard let frame = try? session.step() else { return }
+                guard let frame = try? session.step() else { return false }
                 conversation.record(frame.seconds)
                 onFrame(frame)
                 if frame.done { conversation.stop() }
             }
+            return true
+            }
+            guard keepGoing else { return }
             // Time until the next user frame is complete: poll inside the warm window, else nap.
             let remaining = Double(conversation.frameSamples - fed % conversation.frameSamples) / rate
             if remaining > warm { Thread.sleep(forTimeInterval: 0.001) } else { sched_yield() }

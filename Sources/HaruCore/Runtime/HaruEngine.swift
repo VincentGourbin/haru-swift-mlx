@@ -45,7 +45,8 @@ public final class HaruEngine: @unchecked Sendable {
         let engine = HaruEngine(precision: precision, frameSamples: config.frameSamples, sampleRate: config.sampleRate)
         let tokenizer = try await HaruTokenizer.load(directory: directory)
         engine.model = try await engine.worker.run {
-            Memory.cacheLimit = 1 << 30
+            // 1 GiB as upstream's LocalBackend; HARU_CACHE_LIMIT_MB overrides it (measurements).
+            Memory.cacheLimit = (ProcessInfo.processInfo.environment["HARU_CACHE_LIMIT_MB"].flatMap(Int.init) ?? 1024) << 20
             let store = try WeightStore.load(checkpoint: directory.appendingPathComponent("model.safetensors"), config: config,
                                              dtype: precision == .fp32 ? .float32 : nil)
             let model = HaruModel(store, config: config)
@@ -59,8 +60,8 @@ public final class HaruEngine: @unchecked Sendable {
 
     public var tokenizer: HaruTokenizer { model.tokenizer! }
 
-    /// A throwaway conversation fed at the live cadence (blocks of 1/20 frame, CPU kept awake the last
-    /// 30 ms): the first call of every shape is slow, and the step measured here sets the playback lead.
+    /// A throwaway conversation fed at the live cadence (blocks of 1/20 frame, CPU kept awake by polling,
+    /// as the pump): the first call of every shape is slow, and the step measured here sets the playback lead.
     public func measureStep(settings: ConversationSettings, frames: Int = 6) async throws {
         stepSeconds = try await worker.run { [self] in
             let session = DuplexSession(model: model, systemPrompt: settings.systemPrompt, reference: settings.reference,
@@ -74,7 +75,7 @@ public final class HaruEngine: @unchecked Sendable {
                 for i in 0 ..< blocks {
                     session.feed(block)
                     let due = start.addingTimeInterval(Double(i + 1) * period)
-                    LivePump.wait(until: due, warm: 0.03)
+                    LivePump.wait(until: due, warm: 1)  // poll as the live pump does
                 }
                 steps.append(try session.step().seconds)
             }

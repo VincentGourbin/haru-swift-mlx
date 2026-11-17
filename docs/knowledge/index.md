@@ -17,6 +17,7 @@ sous-répertoires accumulent les conclusions durables.
 
 ## Pitfalls
 Numérotés comme `plan/12-pieges.md`.
+- [L'horloge CPU baisse entre les trames](pitfalls/cpu-clock-drops-between-frames.md) — siestes de 1 ms dans la pompe : pas 46 → 57 ms après ~20 s ; sonder en continu : 44 ms plat (un cœur occupé).
 - [Noyaux Metal différents entre MLX Swift et Python](pitfalls/metal-kernels-differ-between-builds.md) — `rms_norm` fp32 à 3,5e-8 sur entrées identiques : bf16 jamais bit-exact ; parité bf16 = même top-1 + bruit bf16, parité au bit en fp32.
 - [Deux noyaux GDN qui ne donnent pas le même résultat](pitfalls/gdn-kernel-kahan.md) — celui de mlx-swift-lm fait une somme de Kahan, celui de haru_mlx non (n° 3).
 - [Le GPU s'endort entre deux trames](pitfalls/live-cadence-gpu-clock.md) — à 7,5 Hz, le pas vivant coûte +25 % (bf16) / +35 % (8 bits) de plus que dos à dos (n° 20, mesuré T-0.2).

@@ -106,7 +106,7 @@ struct Run: AsyncParsableCommand {
         }
         if let transcript {
             let lines = frames.map { f -> String in
-                let json = try! JSONSerialization.data(withJSONObject: ["frame": f.index, "token": f.token, "text": f.text,
+                let json = try! JSONSerialization.data(withJSONObject: ["frame": f.index, "token": f.token, "text": f.text, "ms": f.seconds * 1000,
                                                                         "time": Double(f.index * frameSamples) / 24_000])
                 return String(decoding: json, as: UTF8.self)
             }

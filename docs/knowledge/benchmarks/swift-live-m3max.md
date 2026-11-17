@@ -27,3 +27,13 @@ Python même chemin (`--feed`, chauffe 30 ms) : bf16 44,7 / 46,3 ; 8 bits 29,3 /
 - Décomposition : entrée 0,7 ms ; moteur 47,7 ms (dont pas 45,3) ; file de sortie 14,3 ms (marge) ; sortie 3,0 ms.
 - 1 sous-alimentation (19 ms rattrapés par WSOLA), probablement au démarrage.
 - Pas p50 45,3 / p99 50,3 / max 50,6 ms ; 0 échantillon perdu.
+
+## Session de 5 min (`haru talk`, périphérique virtuel, speak-first) — avant / après le correctif de la pompe
+| | pas p50 / p99 / max | latence de réponse médiane / p95 | sous-alimentations |
+|---|---|---|---:|
+| siestes de 1 ms (warm 30 ms) | 56,0 / 64,9 / 107,9 ms | 76 / 80 ms | 20 (384 ms rattrapés) |
+| sondage continu (warm 140 ms) | **44,3 / 44,9 / 47,6 ms** | **65 / 65 ms** | 1 (39 ms, au démarrage) |
+
+2255 trames ; empreinte 11 Go ; CPU 61 % d'un cœur (le sondage). Cause : `pitfalls/cpu-clock-drops-between-frames.md`.
+Hors ligne sur 2250 trames : Swift 46,5 → 47,4 ms, Python 45,1 → 46,9 ms (pas de dérive notable).
+Limite : périphérique virtuel à entrée silencieuse, sans latence matérielle de vrais micro/casque.

@@ -143,6 +143,10 @@ final class StudioModel {
 
     func start() async {
         guard let engine else { return }
+        // A preparation in flight would queue a second prompt run ahead of the conversation: let the
+        // debounce end (cancel) or the run finish, then `begin` reuses it when the settings match.
+        prepareTask?.cancel()
+        await prepareTask?.value
         guard await AVCaptureDevice.requestAccess(for: .audio) else {
             phase = .failed("Microphone access denied (System Settings › Privacy & Security › Microphone).")
             return
@@ -191,7 +195,7 @@ final class StudioModel {
     func stop() {
         meter?.invalidate()
         audio?.stop()
-        conversation?.stop()
+        conversation?.stopAndWait()
         if let audio, let conversation {
             let r = audio.report()
             let steps = conversation.steps.dropFirst(8).sorted()
