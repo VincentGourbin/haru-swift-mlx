@@ -10,3 +10,7 @@
 - SwiftPM a résolu mlx-swift **0.32.3** (plage 0.31.6..<0.33.0), swift-transformers 1.4.0, swift-mlx-profiler 1.5.1.
 - T-0.3 : plan de conversion porté, vérifié sur l'en-tête réel (898 paramètres, 0 écart) : les faits de `plan/02.6` sont confirmés par le checkpoint, pas seulement par lecture.
 - Le générateur tiny amont (`make_tiny_checkpoint.py`) exige torch et le paquet PyTorch `haru` : T-1.1 écrira son propre générateur numpy.
+
+## 2026-11-17 — T-0.2, mesure de référence
+- haru_mlx sur M3 Max : bf16 vivant p50 55,7 ms (dos à dos 44,5), 8 bits 41,3 (30,6) ; `feed` + chauffe 44,7 / 29,3 ms ; pic MLX 11,2 / 6,8 Go. Le piège 20 est confirmé (+25 / +35 % en vivant).
+- G-0 levée : bf16 par défaut (p99 vivant ≈ 63 ms, porte 90 ms), dépôt public, voix de test locale hors dépôt, app autonome.

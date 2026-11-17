@@ -36,6 +36,12 @@ le chemin vivant Swift étale l'avant de l'encodeur avec `feed()`. Comparer chem
 (blocs de 2 ms au fil de l'horloge) côté Python, et `--warm-ms` pour séparer le réveil du CPU de
 l'horloge GPU (piège 20).
 
+## Mesure de référence (T-0.2, MESURE)
+haru_mlx sur cette machine : bf16 vivant p50 55,7 / p99 62-64 ms ; dos à dos 44,5 ms ; 8 bits
+vivant 41,3 / dos à dos 30,6 ms ; chemin `feed` + chauffe : bf16 44,7, 8 bits 29,3 ms ; pic MLX
+11,2 / 6,8 Go. Détail : `docs/knowledge/benchmarks/baseline-python-m3max.md`. L'estimation
+bf16 ci-dessus (≈ 57 ms) était pessimiste : ≈ 236 Go/s effectifs, pas 245 × 300/400.
+
 ## Portes
 | Porte | Valeur |
 |---|---|
