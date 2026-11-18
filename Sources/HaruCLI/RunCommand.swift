@@ -73,12 +73,24 @@ struct Run: AsyncParsableCommand {
     @Option(help: "Text sampling temperature.") var temperature: Float = 0.7
     @Option(help: "Text sampling top-k.") var topK = 25
     @Option(help: "Sampling seed.") var seed: UInt64?
+    @Option(help: "Run seeds 0..<N with one load; `{seed}` in the output and transcript paths is replaced.") var seeds: Int?
+    @Option(help: "Added to the \"start speaking\" logit (> 0: Haru takes the turn sooner).") var eopBias: Float = 0
     @Flag(help: "The model opens the conversation.") var speakFirst = false
     @Flag(help: "Write the user on the left channel and the model on the right.") var stereo = false
     @Option(help: "Write per-frame text and tokens as JSON lines.") var transcript: String?
 
     func run() async throws {
         let model = try await modelOptions.load()
+        if let seeds {
+            for s in 0 ..< seeds { try converse(model, seed: UInt64(s), tag: String(s)) }
+        } else {
+            try converse(model, seed: seed, tag: "")
+        }
+    }
+
+    func converse(_ model: HaruModel, seed: UInt64?, tag: String) throws {
+        let output = output.replacingOccurrences(of: "{seed}", with: tag)
+        let transcript = transcript?.replacingOccurrences(of: "{seed}", with: tag)
         let frameSamples = model.config.frameSamples
         var user = try AudioFile.load(URL(fileURLWithPath: (input as NSString).expandingTildeInPath))
         let count = max(1, (user.count + frameSamples - 1) / frameSamples)
@@ -90,6 +102,7 @@ struct Run: AsyncParsableCommand {
         config.speakFirst = speakFirst
         config.maxFrames = count + 1
         config.seed = seed
+        config.eopBias = eopBias
         let session = DuplexSession(model: model, systemPrompt: try card.systemPromptText(),
                                     reference: try card.referenceAudio(), config: config)
         // Model frame t is heard while the user speaks frame t: the last user frame needs no step.

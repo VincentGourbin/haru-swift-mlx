@@ -35,6 +35,12 @@ final class StudioModel {
     var outputName = ""
     var guidance: Float = 1.5 { didSet { schedulePrepare() } }
     var speakFirst = false { didSet { schedulePrepare() } }
+    /// Added to the "start speaking" logit: > 0 makes Haru take the turn sooner (upstream `eop_bias`). 0.5 by
+    /// default: 4.5 of 5 questions answered instead of 3.9 (docs/knowledge/investigations/turn-timing-swift-vs-python.md).
+    var eagerness: Float = UserDefaults.standard.object(forKey: "eagerness") as? Float ?? 0.5 {
+        didSet { UserDefaults.standard.set(eagerness, forKey: "eagerness"); schedulePrepare() }
+    }
+    var temperature: Float = 0.7 { didSet { schedulePrepare() } }
     var marginMs = 15.0
 
     // Live
@@ -75,6 +81,8 @@ final class StudioModel {
         var config = DuplexConfig()
         config.guidanceScale = guidance
         config.speakFirst = speakFirst
+        config.eopBias = eagerness
+        config.temperature = temperature
         let prompt = (try? library?.render(card, language: language)) ?? ""
         return ConversationSettings(systemPrompt: prompt, reference: reference, config: config)
     }
@@ -168,7 +176,7 @@ final class StudioModel {
         frameText = []
         timeline = []
         StudioLog.write("start: input \(input.name), output \(output.name), voice \(String(format: "%.0f", voiceSeconds)) s, " +
-                        "guidance \(guidance), margin \(Int(marginMs)) ms, \(precision.rawValue)")
+                        "guidance \(guidance), eagerness \(eagerness), temperature \(temperature), margin \(Int(marginMs)) ms, \(precision.rawValue)")
         let feeder = StudioFeeder()
         let audio = DuplexAudio(input: input, output: output, bufferMs: 2, marginMs: marginMs,
                                 frameSamples: engine.frameSamples * 2, stepMs: engine.stepSeconds * 1000) { feeder.push($0) }

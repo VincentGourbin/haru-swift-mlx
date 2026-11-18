@@ -55,6 +55,16 @@ struct ContentView: View {
                         Text(String(format: "%.1f", model.guidance)).monospacedDigit()
                     }
                     HStack {
+                        Text("Eagerness").help("Pushes Haru to start speaking sooner (0 = as trained).")
+                        Slider(value: $model.eagerness, in: 0 ... 4, step: 0.5)
+                        Text(String(format: "%.1f", model.eagerness)).monospacedDigit()
+                    }
+                    HStack {
+                        Text("Temperature").help("Lower: steadier words; higher: more varied.")
+                        Slider(value: $model.temperature, in: 0.3 ... 1.0, step: 0.05)
+                        Text(String(format: "%.2f", model.temperature)).monospacedDigit()
+                    }
+                    HStack {
                         Text("Margin")
                         Slider(value: $model.marginMs, in: 5 ... 80, step: 5)
                         Text("\(Int(model.marginMs)) ms").monospacedDigit()

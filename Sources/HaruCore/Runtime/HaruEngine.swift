@@ -23,6 +23,15 @@ public struct ConversationSettings: Sendable, Equatable {
     }
 }
 
+extension ConversationSettings {
+    /// What the prepared prompt depends on; the rest (sampling) is applied by `DuplexSession.retune`.
+    func samePrompt(as other: ConversationSettings) -> Bool {
+        systemPrompt == other.systemPrompt && reference == other.reference && config.speakFirst == other.config.speakFirst
+            && config.seed == other.config.seed && config.referenceSeconds == other.config.referenceSeconds
+            && (config.dry == nil) == (other.config.dry == nil)
+    }
+}
+
 public final class HaruEngine: @unchecked Sendable {
     public let worker = MLXWorker()
     public let precision: HaruPrecision
@@ -62,7 +71,7 @@ public final class HaruEngine: @unchecked Sendable {
 
     /// A throwaway conversation fed at the live cadence (blocks of 1/20 frame, CPU kept awake by polling,
     /// as the pump): the first call of every shape is slow, and the step measured here sets the playback lead.
-    public func measureStep(settings: ConversationSettings, frames: Int = 6) async throws {
+    public func measureStep(settings: ConversationSettings, frames: Int = 12) async throws {
         stepSeconds = try await worker.run { [self] in
             let session = DuplexSession(model: model, systemPrompt: settings.systemPrompt, reference: settings.reference,
                                         config: { var c = settings.config; c.seed = 0; return c }())
@@ -70,7 +79,7 @@ public final class HaruEngine: @unchecked Sendable {
             let blocks = 20, block = [Float](repeating: 0, count: frameSamples / blocks)
             let period = Double(frameSamples) / Double(sampleRate) / Double(blocks)
             var steps: [Double] = []
-            for _ in 0 ..< (frames + 4) {
+            for _ in 0 ..< (frames + 8) {  // 8 warm-up frames: the GPU clock is still rising
                 let start = Date()
                 for i in 0 ..< blocks {
                     session.feed(block)
@@ -86,7 +95,7 @@ public final class HaruEngine: @unchecked Sendable {
 
     /// Runs the prompt of `settings` in the background; `begin` with the same settings then starts at once.
     public func prepare(_ settings: ConversationSettings) async throws {
-        if prepared?.settings == settings { return }
+        if let prepared, prepared.settings.samePrompt(as: settings) { return }
         let result = try await worker.run { [self] () -> (DuplexSession, Frame) in
             let session = DuplexSession(model: model, systemPrompt: settings.systemPrompt, reference: settings.reference,
                                         config: settings.config)
@@ -103,6 +112,7 @@ public final class HaruEngine: @unchecked Sendable {
         try await prepare(settings)
         guard let (_, session, first) = prepared else { throw HaruError.invalidRequest("nothing prepared") }
         prepared = nil
+        try await worker.run { session.retune(settings.config) }  // sampling may have changed since `prepare`
         let conversation = LiveConversation(sampleRate: sampleRate, frameSamples: frameSamples)
         onFrame(first)
         worker.submit {

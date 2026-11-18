@@ -36,7 +36,7 @@ public final class DuplexSession {
     static let prefillChunk = 512
 
     public let model: HaruModel
-    public let config: DuplexConfig
+    public private(set) var config: DuplexConfig
     public let systemPrompt: String
     let reference: [Float]?
     public private(set) var index = 0
@@ -51,6 +51,12 @@ public final class DuplexSession {
     private let detokenizer: StreamDetokenizer
     private let streamIds: MLXArray
     private let banned: [Int]
+    /// Forced replay (parity tests): the token and latent of frame `index` instead of the sampled ones.
+    var forced: ((Int) -> (Int, MLXArray))?
+    /// Per frame (parity tests): the final hidden state and the head's own latent, before any forcing.
+    var onTrace: ((MLXArray, MLXArray) -> Void)?
+    /// Per step (parity tests): the user latent the step consumed.
+    var onUserLatent: ((MLXArray) -> Void)?
 
     public init(model: HaruModel, systemPrompt: String = "", reference: [Float]? = nil, config: DuplexConfig = DuplexConfig()) {
         self.model = model
@@ -71,6 +77,17 @@ public final class DuplexSession {
         let exempt = Set(banned)
         dry = config.dry.map { DryState($0, exempt: exempt) }
         detokenizer = StreamDetokenizer(model.tokenizer!, silent: silent)
+    }
+
+    /// Sampling settings that do not touch the prompt (temperature, top-k/p, EOP bias, guidance,
+    /// length), applied to the frames after this call: the app changes them without re-running the prompt.
+    public func retune(_ other: DuplexConfig) {
+        config.temperature = other.temperature
+        config.topK = other.topK
+        config.topP = other.topP
+        config.eopBias = other.eopBias
+        config.guidanceScale = other.guidanceScale
+        config.maxFrames = other.maxFrames
     }
 
     // MARK: - Prompt
@@ -171,6 +188,7 @@ public final class DuplexSession {
             codec.feed(MLXArray(userAudio))
         }
         let userLatent = model.codec.sample(codec.pop(), key: noise.nextKey())
+        onUserLatent?(userLatent)
         let emb = model.embed(tokens: token.reshaped([1, 1]), modelLatents: latent.reshaped([1, 1, -1]), userLatents: userLatent)
         let hidden = model.forward(emb, cache)[0..., -1]
         return emit(hidden, started: started)
@@ -190,10 +208,16 @@ public final class DuplexSession {
             logits = putAlong(logits, ids, values: MLXArray.full([1, banned.count], values: MLXArray(-Float.infinity)), axis: -1)
             forceText -= 1
         }
-        let nextToken = sampleToken(logits, temperature: config.temperature, topK: config.topK, topP: config.topP,
+        var nextToken = sampleToken(logits, temperature: config.temperature, topK: config.topK, topP: config.topP,
                                     key: noise.nextKey())
         let headNoise = noise.normal([1, model.config.latentDim], dtype: model.dtype)
-        let nextLatent = model.unscaleLatents(model.head.sample(hidden, noise: headNoise, guidance: config.guidanceScale))
+        var nextLatent = model.unscaleLatents(model.head.sample(hidden, noise: headNoise, guidance: config.guidanceScale))
+        onTrace?(hidden, nextLatent)
+        if let forced {
+            let (t, l) = forced(index)
+            nextToken = MLXArray([Int32(t)]).reshaped(nextToken.shape)
+            nextLatent = l.asType(nextLatent.dtype).reshaped(nextLatent.shape)
+        }
         let audio = clip(codec.decode(nextLatent.expandedDimensions(axis: 0))[0], min: -1, max: 1)
         eval([nextToken, nextLatent, audio] + cache.arrays + codec.arrays)
 
