@@ -46,6 +46,12 @@ final class StudioModel {
     private var audio: DuplexAudio?
     private var conversation: LiveConversation?
     private var modelFrames: [Int: [Float]] = [:]
+    /// Per-frame levels (dBFS) of both sides and Haru's text per frame, for the timeline.
+    private(set) var userLevels: [Float] = []
+    private(set) var modelLevels: [Float] = []
+    private var frameText: [(Int, String)] = []
+    private(set) var timeline: [TimelineEntry] = []
+    private var lastTimelineUpdate = Date.distantPast
     private var lastUser: [Float] = []
     private var meter: Timer?
     private var prepareTask: Task<Void, Never>?
@@ -157,12 +163,20 @@ final class StudioModel {
         transcript = ""
         report = ""
         modelFrames = [:]
+        userLevels = []
+        modelLevels = []
+        frameText = []
+        timeline = []
+        StudioLog.write("start: input \(input.name), output \(output.name), voice \(String(format: "%.0f", voiceSeconds)) s, " +
+                        "guidance \(guidance), margin \(Int(marginMs)) ms, \(precision.rawValue)")
         let feeder = StudioFeeder()
         let audio = DuplexAudio(input: input, output: output, bufferMs: 2, marginMs: marginMs,
                                 frameSamples: engine.frameSamples * 2, stepMs: engine.stepSeconds * 1000) { feeder.push($0) }
         let playback = DispatchQueue(label: "haru.studio.playback", qos: .userInteractive)
         do {
-            let conversation = try await engine.begin(settings) { [weak self] frame in
+            let conversation = try await engine.begin(settings, onUserLevel: { [weak self] index, level in
+                Task { @MainActor in self?.receivedUser(index, level) }
+            }) { [weak self] frame in
                 playback.async { audio.receive(index: frame.index, pcm: upsample2x(frame.audio), step: frame.seconds) }
                 Task { @MainActor in self?.received(frame) }
             }
@@ -183,6 +197,26 @@ final class StudioModel {
     private func received(_ frame: Frame) {
         transcript += frame.text
         modelFrames[frame.index] = frame.audio
+        if !frame.text.isEmpty { frameText.append((frame.index, frame.text)) }
+        set(&modelLevels, frame.index, TurnDetector.level(frame.audio[...]))
+        updateTimeline()
+    }
+
+    private func receivedUser(_ index: Int, _ level: Float) {
+        set(&userLevels, index, level)
+        updateTimeline()
+    }
+
+    private func set(_ levels: inout [Float], _ index: Int, _ level: Float) {
+        if index >= levels.count { levels += [Float](repeating: -120, count: index + 1 - levels.count) }
+        levels[index] = level
+    }
+
+    /// Rebuilt from the levels at most a few times a second (cheap: a few thousand frames).
+    private func updateTimeline(force: Bool = false) {
+        guard force || Date().timeIntervalSince(lastTimelineUpdate) > 0.25 else { return }
+        lastTimelineUpdate = Date()
+        timeline = TimelineEntry.build(user: userLevels, model: modelLevels, text: frameText)
     }
 
     private func poll() {
@@ -200,11 +234,23 @@ final class StudioModel {
             let r = audio.report()
             let steps = conversation.steps.dropFirst(8).sorted()
             let p99 = steps.isEmpty ? 0 : steps[min(steps.count - 1, Int(0.99 * Double(steps.count)))] * 1000
-            report = String(format: "Reply latency: median %.0f ms, p95 %.0f ms · underruns %d · step p50 %.1f ms, p99 %.1f ms",
+            report = String(format: "Audio latency: median %.0f ms, p95 %.0f ms · underruns %d · step p50 %.1f ms, p99 %.1f ms",
                             r.p50 * 1000, r.p95 * 1000, r.underruns,
                             steps.isEmpty ? 0 : steps[steps.count / 2] * 1000, p99)
             lastUser = conversation.userAudio
+            updateTimeline(force: true)
+            let turns = TurnDetector().turns(user: TurnDetector().segments(userLevels),
+                                             model: TurnDetector().segments(modelLevels), text: frameText)
+            let summary = turns.replySummary
+            report += String(format: " · %d/%d turns answered, median reply delay %@", summary.answered, turns.count,
+                             summary.median.map { String(format: "%+.2f s", $0) } ?? "—")
             StudioLog.write(report)
+            StudioLog.write("audio latency parts: " + r.parts.map { String(format: "%@ %.1f ms", $0.0, $0.1 * 1000) }.joined(separator: ", ")
+                            + String(format: ", in %.1f ms, out %.1f ms (devices)", audio.inLatency * 1000, audio.outLatency * 1000))
+            for t in turns {
+                StudioLog.write(String(format: "turn you %.2f-%.2f s -> %@", t.user.start, t.user.end,
+                                       t.reply.map { String(format: "haru %.2f-%.2f s (%+.2f s) %@", $0.start, $0.end, t.delay!, t.text) } ?? "no reply"))
+            }
         }
         audio = nil
         conversation = nil
@@ -221,6 +267,32 @@ final class StudioModel {
         let model = modelFrames.keys.sorted().flatMap { modelFrames[$0]! }
         let n = min(lastUser.count, model.count)
         try AudioFile.writeWAV((0 ..< n).flatMap { [lastUser[$0], model[$0]] }, to: url, channels: 2)
+    }
+}
+
+/// One line of the timeline: a stretch of speech by one side, with Haru's words and, when it answers
+/// the utterance before it, the delay since that utterance ended.
+struct TimelineEntry: Identifiable, Equatable {
+    enum Speaker { case user, haru }
+    let speaker: Speaker
+    let segment: SpeechSegment
+    let text: String
+    let delay: Double?
+    var id: String { "\(speaker)-\(segment.start)" }
+
+    static func build(user: [Float], model: [Float], text: [(Int, String)]) -> [TimelineEntry] {
+        let detector = TurnDetector()
+        let u = detector.segments(user), m = detector.segments(model)
+        let turns = detector.turns(user: u, model: m, text: text)
+        var delays: [Double: Double] = [:]  // reply start -> delay
+        for t in turns { if let r = t.reply, let d = t.delay, delays[r.start] == nil { delays[r.start] = d } }
+        var entries = u.map { TimelineEntry(speaker: .user, segment: $0, text: "", delay: nil) }
+        for s in m {
+            let said = text.filter { Double($0.0) * detector.frameSeconds >= s.start - detector.textLead && Double($0.0) * detector.frameSeconds < s.end }
+                .map(\.1).joined().trimmingCharacters(in: .whitespacesAndNewlines)
+            entries.append(TimelineEntry(speaker: .haru, segment: s, text: said, delay: delays[s.start]))
+        }
+        return entries.sorted { $0.segment.start < $1.segment.start }
     }
 }
 

@@ -97,14 +97,16 @@ public final class HaruEngine: @unchecked Sendable {
 
     /// Starts a live conversation: model frame 0 is delivered at once, then frame k + 1 as soon as user
     /// frame k is complete. `onFrame` runs on the MLX thread: keep it short (hand off and return).
-    public func begin(_ settings: ConversationSettings, onFrame: @escaping @Sendable (Frame) -> Void) async throws -> LiveConversation {
+    /// `onUserLevel` (same thread) gets the level in dBFS of each complete user frame, for timelines.
+    public func begin(_ settings: ConversationSettings, onUserLevel: (@Sendable (Int, Float) -> Void)? = nil,
+                      onFrame: @escaping @Sendable (Frame) -> Void) async throws -> LiveConversation {
         try await prepare(settings)
         guard let (_, session, first) = prepared else { throw HaruError.invalidRequest("nothing prepared") }
         prepared = nil
         let conversation = LiveConversation(sampleRate: sampleRate, frameSamples: frameSamples)
         onFrame(first)
         worker.submit {
-            LivePump(session: session, conversation: conversation, onFrame: onFrame).run()
+            LivePump(session: session, conversation: conversation, onFrame: onFrame, onUserLevel: onUserLevel).run()
         }
         return conversation
     }

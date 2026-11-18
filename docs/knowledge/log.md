@@ -29,3 +29,8 @@
 - App `Haru Studio` : prête (prompt préparé en 2,5 s avec 180 s de voix). Piège : une app lit `~/Downloads` seulement après consentement TCC ; l'invite ne s'affiche pas écran éteint ; choisir la voix par « Choose… » l'accorde.
 - Session de 5 min : le pas sautait de 46 à 57 ms après ~20 s (20 sous-alimentations) ; cause : l'horloge CPU baisse quand la pompe fait des siestes de 1 ms ; sonder en continu → 44,3 / 44,9 ms, latence 65 ms, 1 sous-alimentation. Python `--feed --warm-ms 30` y échappait parce qu'il attend activement en continu.
 - Courses corrigées avant la première utilisation : fin de conversation (attendre la sortie de la pompe avant de lire ses mesures), démarrage pendant une préparation (attendre la préparation en cours).
+
+## 2026-11-18 — Première conversation de Vincent ; chronologie des tours
+- Journal de l'app : pas vivant 44,1 ms (p99 45), latence audio médiane 117 ms sur micro et haut-parleurs réels (65 ms sur périphérique virtuel), 1-2 sous-alimentations par session de 8-27 s, sans voix chargée. Le pas mesuré au chargement (47-51 ms) surestime le pas réel (44 ms) : avance de lecture trop grande de quelques ms.
+- Plainte : on ne voit pas à quoi Haru répond. Mesure Swift contre haru_mlx sur 10 graines (`investigations/turn-timing-swift-vs-python.md`) : même distribution, comportement du modèle.
+- Ajouts : `TurnDetector` (HaruCore/Analysis), `haru turns`, niveaux utilisateur par trame dans la pompe (`onUserLevel`), pistes et chronologie dans l'app, tours et décomposition de latence dans `studio.log`.

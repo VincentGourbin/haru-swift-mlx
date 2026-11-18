@@ -116,19 +116,24 @@ struct ConversationPane: View {
             LevelRow(label: "You", level: model.inputLevel, tint: .blue)
             LevelRow(label: "Haru", level: model.outputLevel, tint: .orange)
             HStack {
-                if let latency = model.latencyMs { Text(String(format: "Reply latency %.0f ms", latency)) }
+                if let latency = model.latencyMs { Text(String(format: "Audio latency %.0f ms", latency)) }
                 if model.stepMs > 0 { Text(String(format: "· frame %.0f ms / 133 ms", model.stepMs)) }
             }
             .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            Lanes(user: model.userLevels, haru: model.modelLevels)
+                .frame(height: 64)
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(model.transcript.isEmpty ? "Haru's words appear here." : model.transcript)
-                        .font(.title3).textSelection(.enabled)
-                        .foregroundStyle(model.transcript.isEmpty ? .secondary : .primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .id("end")
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        if model.timeline.isEmpty {
+                            Text("Who speaks when, and Haru's words, appear here.").foregroundStyle(.secondary)
+                        }
+                        ForEach(model.timeline) { TimelineRow(entry: $0) }
+                        Color.clear.frame(height: 1).id("end")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .onChange(of: model.transcript) { proxy.scrollTo("end", anchor: .bottom) }
+                .onChange(of: model.timeline) { proxy.scrollTo("end", anchor: .bottom) }
             }
             if !model.report.isEmpty {
                 Text(model.report).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
@@ -153,6 +158,59 @@ struct ConversationPane: View {
         case .live: Label("Listening and speaking", systemImage: "waveform").foregroundStyle(.orange)
         case .failed(let message): Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
         }
+    }
+}
+
+/// One stretch of speech: time, speaker, Haru's words and its reply delay.
+struct TimelineRow: View {
+    let entry: TimelineEntry
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(String(format: "%5.1f s", entry.segment.start)).monospacedDigit().foregroundStyle(.secondary).frame(width: 56, alignment: .trailing)
+            if entry.speaker == .user {
+                Label(String(format: "You speak (%.1f s)", entry.segment.duration), systemImage: "person.fill")
+                    .foregroundStyle(.blue)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Label("Haru", systemImage: "waveform").foregroundStyle(.orange)
+                        if let d = entry.delay {
+                            Text(String(format: "replies %+.1f s after you stopped", d)).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(entry.text.isEmpty ? "(sound without words)" : entry.text)
+                        .font(.title3).textSelection(.enabled)
+                        .foregroundStyle(entry.text.isEmpty ? .secondary : .primary)
+                }
+            }
+        }
+    }
+}
+
+/// Both sides over the last 15 seconds, one bar per frame, on the same clock (newest at the right).
+struct Lanes: View {
+    let user: [Float]
+    let haru: [Float]
+    private let frames = 112  // 15 s
+
+    var body: some View {
+        Canvas { context, size in
+            let end = max(user.count, haru.count)
+            let start = max(0, end - frames)
+            let w = size.width / CGFloat(frames)
+            for (row, (levels, color)) in [(user, Color.blue), (haru, Color.orange)].enumerated() {
+                let mid = size.height * (row == 0 ? 0.25 : 0.75)
+                let half = size.height * 0.22
+                for i in start ..< end where i < levels.count {
+                    let v = CGFloat(min(1, max(0, (levels[i] + 60) / 50)))  // -60 dBFS .. -10 dBFS
+                    let h = max(1, v * half)
+                    let x = CGFloat(i - start) * w
+                    context.fill(Path(CGRect(x: x, y: mid - h, width: max(1, w - 1), height: 2 * h)),
+                                 with: .color(levels[i] > TurnDetector().thresholdDB ? color : color.opacity(0.3)))
+                }
+            }
+        }
+        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
     }
 }
 

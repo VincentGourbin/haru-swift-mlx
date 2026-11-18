@@ -119,7 +119,9 @@ struct Simulate: AsyncParsableCommand {
         let frameSeconds = Double(engine.frameSamples) / Double(engine.sampleRate)
         let collector = Collector()
         let start = Date().addingTimeInterval(0.05)
-        let conversation = try await engine.begin(settings) { frame in collector.add(frame, at: Date()) }
+        let conversation = try await engine.begin(settings, onUserLevel: { collector.addLevel($0, $1) }) { frame in
+            collector.add(frame, at: Date())
+        }
         // Feed on the wall clock, from a high-priority thread, block by block.
         let feeder = Thread {
             var sent = 0
@@ -166,6 +168,17 @@ struct Simulate: AsyncParsableCommand {
                      frames.count, pct(steps, 0.5), pct(steps, 0.99), steps.last ?? 0, pct(delays, 0.5), pct(delays, 0.99),
                      delays.last ?? 0, late, conversation.droppedSamples))
         print(frames.map { $0.0.text }.joined().trimmingCharacters(in: .whitespaces))
+        // Turns from the live levels (as the app's timeline), checked against the levels of the file.
+        let live = collector.levels.sorted { $0.0 < $1.0 }
+        let offline = TurnDetector.levels(user24, frameSamples: engine.frameSamples)
+        let gap = zip(live, offline).map { abs($0.0.1 - $0.1) }.max() ?? 0
+        let detector = TurnDetector()
+        let turns = detector.turns(user: detector.segments(live.map(\.1)),
+                                   model: detector.segments(frames.map { TurnDetector.level($0.0.audio[...]) }),
+                                   text: frames.map { ($0.0.index, $0.0.text) })
+        let summary = turns.replySummary
+        print(String(format: "user levels: %d live frames, largest gap to the file %.2g dB; %d/%d turns answered, median reply delay %@",
+                     live.count, gap, summary.answered, turns.count, summary.median.map { String(format: "%+.2f s", $0) } ?? "—"))
     }
 }
 
@@ -174,4 +187,7 @@ final class Collector: @unchecked Sendable {
     private var items: [(Frame, Date)] = []
     func add(_ frame: Frame, at date: Date) { lock.lock(); items.append((frame, date)); lock.unlock() }
     var frames: [(Frame, Date)] { lock.lock(); defer { lock.unlock() }; return items }
+    private var userLevels: [(Int, Float)] = []
+    func addLevel(_ index: Int, _ level: Float) { lock.lock(); userLevels.append((index, level)); lock.unlock() }
+    var levels: [(Int, Float)] { lock.lock(); defer { lock.unlock() }; return userLevels }
 }

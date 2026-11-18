@@ -85,6 +85,8 @@ struct LivePump {
     let session: DuplexSession
     let conversation: LiveConversation
     let onFrame: @Sendable (Frame) -> Void
+    /// Level (dBFS) of each complete 24 kHz user frame, with its index, as it is fed (MLX thread).
+    var onUserLevel: (@Sendable (Int, Float) -> Void)?
     /// Seconds before a user frame completes during which the pump polls instead of napping. Default:
     /// always (more than a frame). Napping 1 ms between audio blocks let the CPU clock drop after ~20 s
     /// and the step rose from 46 to 57 ms (measured 2026-11-17; docs/knowledge/pitfalls/cpu-clock-drops-
@@ -103,6 +105,7 @@ struct LivePump {
         var raw: [Float] = []
         raw.reserveCapacity(48_000)
         var fed = 0  // 24 kHz samples fed
+        var energy: Float = 0  // sum of squares of the user frame being filled
         let rate = Double(conversation.sampleRate)
         while conversation.drain(into: &raw) {
             // One pool per iteration: the pump is a single job for the whole conversation, so the Metal
@@ -115,6 +118,16 @@ struct LivePump {
                 raw.removeFirst(even)
                 session.feed(pcm)
                 conversation.keep(pcm)
+                if let onUserLevel {
+                    let size = conversation.frameSamples
+                    for (i, v) in pcm.enumerated() {
+                        energy += v * v
+                        if (fed + i + 1) % size == 0 {
+                            onUserLevel((fed + i + 1) / size - 1, 10 * log10(max(energy / Float(size), 1e-12)))
+                            energy = 0
+                        }
+                    }
+                }
                 fed += pcm.count
             }
             while session.framesReady > 0 {
