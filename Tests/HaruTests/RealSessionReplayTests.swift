@@ -17,6 +17,8 @@ import Testing
 struct RealSessionReplayTests {
     struct Curve {
         var hidden: [Double] = [], latent: [Double] = [], user: [Double] = [], audio: [Double] = []
+        /// Frames where Swift's own sampled token differs from Python's: (frame, Swift, Python).
+        var tokenMismatches: [(Int, Int, Int)] = []
     }
 
     func replay(_ dtype: DType, _ name: String, quantize: Bool = false) async throws -> Curve? {
@@ -42,7 +44,8 @@ struct RealSessionReplayTests {
         var curve = Curve()
         var frame = 0
         session.forced = { i in (Int(tokens[i]), latents[i]) }
-        session.onTrace = { h, l in
+        session.onTrace = { h, l, t in
+            if t != Int(tokens[frame]) { curve.tokenMismatches.append((frame, t, Int(tokens[frame]))) }
             curve.hidden.append(Parity.relativeError(h.reshaped([-1]), hidden[frame]))
             curve.latent.append(Parity.relativeError(l.reshaped([-1]), latents[frame]))
         }
@@ -56,7 +59,6 @@ struct RealSessionReplayTests {
         for (i, f) in frames.enumerated() {
             curve.audio.append(Parity.relativeError(MLXArray(f.audio), audio[i]))
         }
-        #expect(frames.map(\.token) == tokens.map(Int.init))
         return curve
     }
 
@@ -66,6 +68,8 @@ struct RealSessionReplayTests {
             return w.isEmpty ? "-" : String(format: "%.1e/%.1e", w[w.count / 2], w.last!)
         }
         let n = c.hidden.count
+        print("REPLAY \(name) own token differs from Python's at \(c.tokenMismatches.count)/\(n) frames: " +
+              c.tokenMismatches.prefix(20).map { "\($0.0):\($0.1)/\($0.2)" }.joined(separator: " "))
         for r in stride(from: 0, to: n, by: 50).map({ $0 ..< $0 + 50 }) {
             print("REPLAY \(name) frames \(r.lowerBound)-\(min(n, r.upperBound) - 1): hidden \(window(c.hidden, r)) " +
                   "latent \(window(c.latent, r)) user \(window(c.user, r)) audio \(window(c.audio, r)) (median/max)")
@@ -79,6 +83,8 @@ struct RealSessionReplayTests {
         #expect(c.hidden.max()! < 1e-3)
         #expect(c.latent.max()! < 1e-2)
         #expect(c.user.max()! < 1e-3)
+        // Sampling (DRY, top-k, fp32 PAD/EOP) with the same history and key: same token at (almost) every frame.
+        #expect(c.tokenMismatches.count <= 2, "\(c.tokenMismatches)")
     }
 
     @Test func bfloat16() async throws {

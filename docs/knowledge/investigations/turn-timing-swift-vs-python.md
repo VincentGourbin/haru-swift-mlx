@@ -41,6 +41,9 @@ jeton et le latent de Python.
 | bf16 Swift contre fp32 Python | 2,1e-2 | 3,9e-2 | 2,3e-2 | 1,6e-2 |
 | 8 bits Swift contre fp32 Python | 4,0e-2 | 8,1e-2 | 2,3e-2 | 1,6e-2 |
 
+Jeton tiré par Swift lui-même (avant forçage) : identique à Python aux 410 trames en fp32 (DRY, top-k,
+PAD/EOP en fp32 compris) ; 34 trames sur 410 diffèrent en bf16, 40 en bf16 contre fp32, 55 en 8 bits contre fp32.
+
 Aucune dérive sur 410 trames : codec en flux, cache KV, réinjection du latent sont exacts. L'écart
 de WER n'est donc pas un défaut du portage. Le 8 bits double la distance à fp32 du bf16 : admis
 comme option (plus rapide, −4 Go), pas comme défaut sans écoute.
@@ -55,5 +58,6 @@ comme option (plus rapide, −4 Go), pas comme défaut sans écoute.
 | 2 | 4,8 | −3,47 s | 35 | 169 |
 | 3 | 5,0 | 0,00 s | 24 | 167 |
 
-0,5 devient la valeur par défaut de l'app (la bibliothèque garde 0, comme l'amont) ; au-delà de 1,
+Tendance nette et monotone de 0 à 3 ; à 10 graines, les chiffres d'une ligne sont à ±0,5 réponse près
+(le seul biais 0 va de 3,4 à 3,9 selon la précision). 0,5 devient la valeur par défaut de l'app (la bibliothèque garde 0, comme l'amont) ; au-delà de 1,
 Haru monologue.

@@ -25,6 +25,11 @@
 - D13 (2026-11-17). À la demande de Vincent (« rends-moi la main quand l'app de test est faite »),
   les GATE G-1 à G-3 sont remplacées par des portes automatiques (parité, simulation vivante,
   Core Audio sur périphérique virtuel) et une écoute groupée à la livraison de l'app.
+- D14 (2026-11-18). Biais EOP (« Eagerness ») à 0,5 par défaut dans l'app, 0 dans la bibliothèque
+  et la CLI (comme l'amont) : tendance mesurée sur 10 graines par réglage (réponses 3,9 → 4,5 sur 5,
+  monologues au-delà de 1). bf16 reste le défaut ; le 8 bits (distance à fp32 double, rejeu forcé de
+  410 trames) reste une option. Le portage est validé sur une session entière par rejeu forcé
+  (`RealSessionReplayTests`), en plus des portes de D12.
 
 ## Ouvertes
 - Q5. Écoute groupée : aller-retour codec, `haru run`, conversation dans l'app (remplace G-1 à G-3).

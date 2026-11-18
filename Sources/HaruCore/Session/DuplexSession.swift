@@ -53,8 +53,9 @@ public final class DuplexSession {
     private let banned: [Int]
     /// Forced replay (parity tests): the token and latent of frame `index` instead of the sampled ones.
     var forced: ((Int) -> (Int, MLXArray))?
-    /// Per frame (parity tests): the final hidden state and the head's own latent, before any forcing.
-    var onTrace: ((MLXArray, MLXArray) -> Void)?
+    /// Per frame (parity tests): the final hidden state, the head's own latent and the sampled token,
+    /// before any forcing.
+    var onTrace: ((MLXArray, MLXArray, Int) -> Void)?
     /// Per step (parity tests): the user latent the step consumed.
     var onUserLatent: ((MLXArray) -> Void)?
 
@@ -212,7 +213,7 @@ public final class DuplexSession {
                                     key: noise.nextKey())
         let headNoise = noise.normal([1, model.config.latentDim], dtype: model.dtype)
         var nextLatent = model.unscaleLatents(model.head.sample(hidden, noise: headNoise, guidance: config.guidanceScale))
-        onTrace?(hidden, nextLatent)
+        onTrace?(hidden, nextLatent, onTrace == nil ? 0 : nextToken.item(Int.self))
         if let forced {
             let (t, l) = forced(index)
             nextToken = MLXArray([Int32(t)]).reshaped(nextToken.shape)

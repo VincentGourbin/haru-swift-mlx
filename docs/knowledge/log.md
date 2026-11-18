@@ -31,7 +31,7 @@
 - Courses corrigées avant la première utilisation : fin de conversation (attendre la sortie de la pompe avant de lire ses mesures), démarrage pendant une préparation (attendre la préparation en cours).
 
 ## 2026-11-18 — Première conversation de Vincent ; chronologie des tours
-- Journal de l'app : pas vivant 44,1 ms (p99 45), latence audio médiane 117 ms sur micro et haut-parleurs réels (65 ms sur périphérique virtuel), 1-2 sous-alimentations par session de 8-27 s, sans voix chargée. Le pas mesuré au chargement (47-51 ms) surestime le pas réel (44 ms) : avance de lecture trop grande de quelques ms.
+- Journal de l'app : pas vivant 44,1 ms (p99 45), latence audio médiane 117 ms sur micro et haut-parleurs réels (65 ms sur périphérique virtuel), 1-2 sous-alimentations par session de 8-27 s, sans voix chargée. Le pas mesuré au chargement (47-51 ms) vaut la médiane vivante + 3 ms de marge, voulue comme en amont (vérifié plus tard le même jour).
 - Plainte : on ne voit pas à quoi Haru répond. Mesure Swift contre haru_mlx sur 10 graines (`investigations/turn-timing-swift-vs-python.md`) : même distribution, comportement du modèle.
 - Ajouts : `TurnDetector` (HaruCore/Analysis), `haru turns`, niveaux utilisateur par trame dans la pompe (`onUserLevel`), pistes et chronologie dans l'app, tours et décomposition de latence dans `studio.log`.
 
@@ -39,5 +39,7 @@
 - Rejeu forcé d'une session de 410 trames contre haru_mlx : fp32 à 1e-6 sans dérive, bf16 audio bit-exact et état caché plat à ~1e-2. L'écart de WER du juge ASR (16 % contre 6,5 %) est de la variance d'échantillonnage. Détails : `investigations/turn-timing-swift-vs-python.md`.
 - Biais EOP : 0,5 dans l'app (4,5 réponses sur 5 au lieu de 3,9). Curseurs Eagerness et Temperature ; changer l'échantillonnage ne relance plus le prompt (`DuplexSession.retune`).
 - Pas mesuré au chargement : 12 trames après 8 de chauffe (au lieu de 6 après 4) ; il vaut la médiane vivante + 3 ms par conception (amont), l'écart 47,7 / 44,8 ms est cette marge, pas une erreur.
+- Rejeu fp32 : le jeton tiré par Swift (DRY, top-k, PAD/EOP fp32) est celui de Python aux 410 trames ; bf16 : 34 trames sur 410 diffèrent (bruit bf16).
+- Latence audio : aucun gain ; les 117 ms du micro et des haut-parleurs réels restent à décomposer (journal de l'app, prochaine session).
 - 8 bits : distance à fp32 double de celle du bf16 (état caché 4e-2 contre 2,1e-2) ; reste une option.
 - `haru run --seeds N --eop-bias B` (une charge pour N graines ; isolation vérifiée, mêmes jetons qu'en processus séparés).

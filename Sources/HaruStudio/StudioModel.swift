@@ -255,6 +255,14 @@ final class StudioModel {
             StudioLog.write(report)
             StudioLog.write("audio latency parts: " + r.parts.map { String(format: "%@ %.1f ms", $0.0, $0.1 * 1000) }.joined(separator: ", ")
                             + String(format: ", in %.1f ms, out %.1f ms (devices)", audio.inLatency * 1000, audio.outLatency * 1000))
+            // The "You" detection is a fixed threshold: these say whether it fits this microphone and room.
+            func percentiles(_ v: [Float]) -> String {
+                let s = v.filter { $0 > -119 }.sorted()
+                guard !s.isEmpty else { return "-" }
+                return [0.1, 0.5, 0.9, 0.99].map { String(format: "%.0f", s[min(s.count - 1, Int($0 * Double(s.count)))]) }.joined(separator: "/")
+            }
+            StudioLog.write("frame levels dBFS p10/p50/p90/p99: you \(percentiles(userLevels)), haru \(percentiles(modelLevels)) " +
+                            "(speech threshold \(Int(TurnDetector().thresholdDB)))")
             for t in turns {
                 StudioLog.write(String(format: "turn you %.2f-%.2f s -> %@", t.user.start, t.user.end,
                                        t.reply.map { String(format: "haru %.2f-%.2f s (%+.2f s) %@", $0.start, $0.end, t.delay!, t.text) } ?? "no reply"))

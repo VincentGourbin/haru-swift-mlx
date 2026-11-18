@@ -22,7 +22,7 @@ whole model inside the app, so it can be embedded in other apps and, later, stud
 | Qwen3.5 backbone, MeanFlow head | ✅ fp32 parity ~1e-5, same top-1 in bf16 |
 | Session, offline wav → wav (`haru run`) | ✅ |
 | Live conversation (`haru talk`, Core Audio in-process) | ✅ step 44.3 ms (bf16, p99 44.9 over 5 min); reply latency 65 ms median on a virtual device (real mic/headphones add their own latency) |
-| Test app (`Haru Studio`) | 🧪 first version: builds, loads, prepares card + voice; conversation not yet tried with a real microphone |
+| Test app (`Haru Studio`) | 🧪 first conversations held; timeline of turns, eagerness and temperature controls |
 | 8-bit (`--precision int8`) | ✅ step 32.9 ms; twice bf16's distance to fp32 over a 410-frame forced replay — an option, not the default |
 | Turn timeline (`haru turns`, app) | ✅ reply delay per turn; turn timing matches haru_mlx over 10 seeds |
 | Compiled per-layer steps, reference profiles | 🔜 Jalon 5 |
