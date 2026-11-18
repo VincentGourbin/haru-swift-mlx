@@ -38,6 +38,15 @@ public struct TurnDetector: Sendable {
 
     public init(frameSeconds: Double = 3200.0 / 24_000) { self.frameSeconds = frameSeconds }
 
+    /// A threshold that follows the microphone: 15 dB above its noise floor (10th percentile of the
+    /// frame levels), kept between -62 and -40 dBFS. A quiet headset mic (floor -79 dBFS, speech
+    /// at -42) is missed by the fixed -40; a noisy room is not taken for speech.
+    public static func adaptiveThreshold(_ levels: [Float]) -> Float {
+        let s = levels.filter { $0 > -119 }.sorted()
+        guard s.count >= 8 else { return -40 }
+        return min(-40, max(-62, s[s.count / 10] + 15))
+    }
+
     public static func level(_ x: ArraySlice<Float>) -> Float {
         guard !x.isEmpty else { return -120 }
         var sum: Float = 0

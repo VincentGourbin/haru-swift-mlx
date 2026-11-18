@@ -10,7 +10,7 @@ struct HaruCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "haru",
         abstract: "Haru-4B full-duplex spoken dialogue on Apple Silicon (MLX).",
-        subcommands: [Info.self, Card.self, Download.self, Run.self, Talk.self, Devices.self, Simulate.self, Turns.self]
+        subcommands: [Info.self, Card.self, Download.self, Run.self, Talk.self, Devices.self, Simulate.self, Turns.self, EchoTest.self]
     )
 }
 

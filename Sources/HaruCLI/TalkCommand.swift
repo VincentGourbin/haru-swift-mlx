@@ -30,6 +30,7 @@ struct Talk: AsyncParsableCommand {
     @Option(help: "Audio guidance scale (1-2).") var guidanceScale: Float = 1.5
     @Flag(help: "The model opens the conversation.") var speakFirst = false
     @Option(help: "Stop after this many seconds (default: until Ctrl-C).") var seconds: Double?
+    @Flag(help: "Apple's echo canceller (voice processing): for speakers without headphones.") var echoCancellation = false
 
     func run() async throws {
         setvbuf(stdout, nil, _IONBF, 0)  // the live transcript and the status lines in order
@@ -49,7 +50,7 @@ struct Talk: AsyncParsableCommand {
 
         let feeder = Feeder()
         let audio = DuplexAudio(input: inDevice, output: outDevice, bufferMs: bufferMs, marginMs: marginMs,
-                                frameSamples: engine.frameSamples * 2, stepMs: engine.stepSeconds * 1000) { feeder.push($0) }
+                                frameSamples: engine.frameSamples * 2, stepMs: engine.stepSeconds * 1000, echoCancellation: echoCancellation) { feeder.push($0) }
         let playback = DispatchQueue(label: "haru.playback", qos: .userInteractive)
         let conversation = try await engine.begin(settings) { frame in
             if !frame.text.isEmpty { print(frame.text, terminator: "") }

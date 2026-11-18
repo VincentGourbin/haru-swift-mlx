@@ -140,3 +140,28 @@ func setBufferFrames(_ id: AudioDeviceID, _ frames: UInt32) -> UInt32 {
     return property(id, kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal, frames)
 }
 
+
+/// Calls `onChange` on the main queue when a device appears or goes, or a system default changes.
+public final class DeviceWatcher: @unchecked Sendable {
+    private let selectors: [AudioObjectPropertySelector] = [
+        kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultInputDevice, kAudioHardwarePropertyDefaultOutputDevice,
+    ]
+    private var blocks: [(AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
+
+    public init(onChange: @escaping @Sendable () -> Void) {
+        for selector in selectors {
+            var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
+                                                     mElement: kAudioObjectPropertyElementMain)
+            let block: AudioObjectPropertyListenerBlock = { _, _ in onChange() }
+            AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, block)
+            blocks.append((address, block))
+        }
+    }
+
+    deinit {
+        for (address, block) in blocks {
+            var a = address
+            AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &a, .main, block)
+        }
+    }
+}

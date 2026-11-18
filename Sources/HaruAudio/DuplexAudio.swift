@@ -64,12 +64,21 @@ public final class DuplexAudio: @unchecked Sendable {
     public private(set) var outputBufferMs = 0.0
     public private(set) var marginMs: Double
     public let player: Player
-    public let inLatency: Double
-    public let outLatency: Double
+    public private(set) var inLatency: Double
+    public private(set) var outLatency: Double
+    /// One voice-processing unit for both directions (Apple's echo canceller, as FaceTime): the
+    /// microphone signal has the speakers' output removed. Off: two raw HAL units (headphones).
+    public let echoCancellation: Bool
+    /// Rates the devices actually ran at once the units had started (Bluetooth headsets switch to
+    /// a call rate when their microphone opens), and notes on what was reconfigured.
+    public private(set) var runningInputRate = 0.0
+    public private(set) var runningOutputRate = 0.0
+    public private(set) var notes: [String] = []
     private let onAudio: (UnsafeBufferPointer<Float>) -> Void
     private var inUnit: AudioUnit?
     private var outUnit: AudioUnit?
     private let buffers: UnsafeMutableAudioBufferListPointer
+    private let allocatedBuffers: Int
     private let capacity = 8192
     private var resampler: Resampler
     private var resampled: [Float] = []
@@ -90,7 +99,8 @@ public final class DuplexAudio: @unchecked Sendable {
     public var outputTap: ((UnsafeBufferPointer<Float>, Double) -> Void)?
 
     public init(input: Device, output: Device, bufferMs: Double, marginMs: Double, frameSamples: Int,
-         stepMs: Double, onAudio: @escaping (UnsafeBufferPointer<Float>) -> Void) {
+         stepMs: Double, echoCancellation: Bool = false, onAudio: @escaping (UnsafeBufferPointer<Float>) -> Void) {
+        self.echoCancellation = echoCancellation
         self.input = input
         self.output = output
         self.frameSamples = frameSamples
@@ -105,6 +115,7 @@ public final class DuplexAudio: @unchecked Sendable {
         // at the DAC: input buffer, step, ~5 ms for the socket and encoding the
         // frame's last chunk, output buffer and device, and the margin.
         lead = bufferMs / 1000 + stepMs / 1000 + 0.005 + bufferMs / 1000 + outLatency + marginMs / 1000
+        allocatedBuffers = max(1, input.inputs)
         buffers = AudioBufferList.allocate(maximumBuffers: max(1, input.inputs))
         for i in 0..<max(1, input.inputs) {
             buffers[i] = AudioBuffer(mNumberChannels: 1, mDataByteSize: UInt32(capacity * 4),
@@ -116,6 +127,7 @@ public final class DuplexAudio: @unchecked Sendable {
     }
 
     deinit {
+        buffers.unsafeMutablePointer.pointee.mNumberBuffers = UInt32(allocatedBuffers)
         for b in buffers { b.mData?.deallocate() }
         free(buffers.unsafeMutablePointer)
     }
@@ -149,10 +161,10 @@ public final class DuplexAudio: @unchecked Sendable {
     private let stepMs: Double
 
     public func start() throws {
-        let inFrames = setBufferFrames(input.id, UInt32(input.rate * bufferMs / 1000))
-        let outFrames = setBufferFrames(output.id, UInt32(output.rate * bufferMs / 1000))
-        inputBufferMs = Double(inFrames) / input.rate * 1000
-        outputBufferMs = Double(outFrames) / output.rate * 1000
+        if echoCancellation { try startVoiceProcessing() } else { try startRaw() }
+    }
+
+    private func planLead() {
         // A frame can land just after an output cycle began: keep at least one
         // output cycle (plus 5 ms) of slack, and plan with the real buffers.
         marginMs = max(marginMs, outputBufferMs + 5)
@@ -161,44 +173,135 @@ public final class DuplexAudio: @unchecked Sendable {
         os_unfair_lock_unlock(&player.lock)
         lead = inputBufferMs / 1000 + stepMs / 1000 + 0.005 + outputBufferMs / 1000 + outLatency
             + marginMs / 1000
-        let size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        let refCon = Unmanaged.passUnretained(self).toOpaque()
+    }
 
-        let inU = try Self.makeUnit(device: input.id, input: true)
-        var inFormat = Self.floatFormat(rate: input.rate, channels: max(1, input.inputs))
-        try ok(AudioUnitSetProperty(inU, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1,
-                                    &inFormat, size), "input format")
-        var inCallback = AURenderCallbackStruct(inputProc: { refCon, flags, ts, bus, frames, _ in
+    private var inputCallback: AURenderCallbackStruct {
+        AURenderCallbackStruct(inputProc: { refCon, flags, ts, bus, frames, _ in
             Unmanaged<DuplexAudio>.fromOpaque(refCon).takeUnretainedValue()
                 .handleInput(flags, ts, bus, frames)
-        }, inputProcRefCon: refCon)
+        }, inputProcRefCon: Unmanaged.passUnretained(self).toOpaque())
+    }
+
+    private var renderCallback: AURenderCallbackStruct {
+        AURenderCallbackStruct(inputProc: { refCon, _, ts, _, frames, data in
+            Unmanaged<DuplexAudio>.fromOpaque(refCon).takeUnretainedValue()
+                .handleOutput(ts, frames, data!)
+        }, inputProcRefCon: Unmanaged.passUnretained(self).toOpaque())
+    }
+
+    /// Two HAL units, raw signal. The input side cannot convert rates, so the client format follows
+    /// the device's rate as it is once the unit runs (a Bluetooth headset switches when its mic opens).
+    private func startRaw() throws {
+        let size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        let inU = try Self.makeUnit(device: input.id, input: true)
+        var inCallback = inputCallback
         try ok(AudioUnitSetProperty(inU, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0,
                                     &inCallback, UInt32(MemoryLayout<AURenderCallbackStruct>.size)),
                "input callback")
+        func configureInput(rate deviceRate: Double) throws {
+            var inFormat = Self.floatFormat(rate: deviceRate, channels: max(1, input.inputs))
+            try ok(AudioUnitSetProperty(inU, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1,
+                                        &inFormat, size), "input format")
+            resampler = Resampler(from: deviceRate, to: 48_000)
+            runningInputRate = deviceRate
+        }
+        try configureInput(rate: currentRate(input.id))
+        try ok(AudioUnitInitialize(inU), "initialize input")
+        inUnit = inU  // the callback renders from it
+        try ok(AudioOutputUnitStart(inU), "start input")
+        // Opening the microphone may have changed the device's rate: reconfigure once if so.
+        for _ in 0 ..< 20 {
+            let now = currentRate(input.id)
+            if now != runningInputRate {
+                notes.append(String(format: "input rate changed to %.0f Hz when the microphone opened (was %.0f)", now, runningInputRate))
+                AudioOutputUnitStop(inU)
+                AudioUnitUninitialize(inU)
+                try configureInput(rate: now)
+                try ok(AudioUnitInitialize(inU), "initialize input")
+                try ok(AudioOutputUnitStart(inU), "start input")
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
 
         let outU = try Self.makeUnit(device: output.id, input: false)
         var outFormat = Self.floatFormat(rate: rate, channels: 1)  // the unit converts to the device
         try ok(AudioUnitSetProperty(outU, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0,
                                     &outFormat, size), "output format")
-        var outCallback = AURenderCallbackStruct(inputProc: { refCon, _, ts, _, frames, data in
-            Unmanaged<DuplexAudio>.fromOpaque(refCon).takeUnretainedValue()
-                .handleOutput(ts, frames, data!)
-        }, inputProcRefCon: refCon)
+        var outCallback = renderCallback
         try ok(AudioUnitSetProperty(outU, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0,
                                     &outCallback, UInt32(MemoryLayout<AURenderCallbackStruct>.size)),
                "render callback")
-
-        try ok(AudioUnitInitialize(inU), "initialize input")
         try ok(AudioUnitInitialize(outU), "initialize output")
-        inUnit = inU
         outUnit = outU
+        measureDevices()
         try ok(AudioOutputUnitStart(outU), "start output")
-        try ok(AudioOutputUnitStart(inU), "start input")
+    }
+
+    /// Buffers, rates and latencies as the devices run now (after any switch).
+    private func measureDevices() {
+        runningOutputRate = currentRate(output.id)
+        if runningInputRate == 0 { runningInputRate = currentRate(input.id) }
+        let inFrames = setBufferFrames(input.id, UInt32(runningInputRate * bufferMs / 1000))
+        let outFrames = setBufferFrames(output.id, UInt32(runningOutputRate * bufferMs / 1000))
+        inputBufferMs = Double(inFrames) / runningInputRate * 1000
+        outputBufferMs = Double(outFrames) / runningOutputRate * 1000
+        inLatency = Double(deviceLatencyFrames(input.id, input: true)) / runningInputRate
+        outLatency = Double(deviceLatencyFrames(output.id, input: false)) / runningOutputRate
+        planLead()
+    }
+
+    /// Apple's voice-processing unit: one unit, microphone on bus 1, playback on bus 0, so the echo
+    /// canceller sees what is played. Automatic gain is turned off (it would change what the model
+    /// hears from one sentence to the next); other audio is ducked as little as the system allows.
+    private func startVoiceProcessing() throws {
+        var desc = AudioComponentDescription(
+            componentType: kAudioUnitType_Output, componentSubType: kAudioUnitSubType_VoiceProcessingIO,
+            componentManufacturer: kAudioUnitManufacturer_Apple, componentFlags: 0, componentFlagsMask: 0)
+        var unit: AudioUnit?
+        try ok(AudioComponentInstanceNew(AudioComponentFindNext(nil, &desc)!, &unit), "voice processing unit")
+        let u = unit!
+        let size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        var on: UInt32 = 1
+        try ok(AudioUnitSetProperty(u, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &on, 4), "EnableIO input")
+        try ok(AudioUnitSetProperty(u, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &on, 4), "EnableIO output")
+        // Devices: element 1 is the microphone side, element 0 the speaker side.
+        var inID = input.id, outID = output.id
+        let idSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let inStatus = AudioUnitSetProperty(u, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 1, &inID, idSize)
+        let outStatus = AudioUnitSetProperty(u, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &outID, idSize)
+        if inStatus != noErr || outStatus != noErr {
+            notes.append("voice processing: device selection refused (\(inStatus), \(outStatus)), system defaults used")
+        }
+        var agc: UInt32 = 0
+        AudioUnitSetProperty(u, kAUVoiceIOProperty_VoiceProcessingEnableAGC, kAudioUnitScope_Global, 1, &agc, 4)
+        if #available(macOS 14.0, *) {
+            var ducking = AUVoiceIOOtherAudioDuckingConfiguration(mEnableAdvancedDucking: true,
+                                                                  mDuckingLevel: .min)
+            AudioUnitSetProperty(u, kAUVoiceIOProperty_OtherAudioDuckingConfiguration, kAudioUnitScope_Global, 0,
+                                 &ducking, UInt32(MemoryLayout<AUVoiceIOOtherAudioDuckingConfiguration>.size))
+        }
+        // The unit converts both directions to and from 48 kHz mono float.
+        var format = Self.floatFormat(rate: rate, channels: 1)
+        try ok(AudioUnitSetProperty(u, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &format, size), "mic format")
+        try ok(AudioUnitSetProperty(u, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &format, size), "speaker format")
+        var inCallback = inputCallback, outCallback = renderCallback
+        try ok(AudioUnitSetProperty(u, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 1,
+                                    &inCallback, UInt32(MemoryLayout<AURenderCallbackStruct>.size)), "input callback")
+        try ok(AudioUnitSetProperty(u, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0,
+                                    &outCallback, UInt32(MemoryLayout<AURenderCallbackStruct>.size)), "render callback")
+        buffers.unsafeMutablePointer.pointee.mNumberBuffers = 1  // mono after processing
+        try ok(AudioUnitInitialize(u), "initialize voice processing")
+        resampler = Resampler(from: rate, to: 48_000)
+        runningInputRate = currentRate(input.id)
+        inUnit = u
+        measureDevices()
+        try ok(AudioOutputUnitStart(u), "start voice processing")
     }
 
     public func stop() {
         if let u = outUnit { AudioOutputUnitStop(u); AudioComponentInstanceDispose(u) }
-        if let u = inUnit { AudioOutputUnitStop(u); AudioComponentInstanceDispose(u) }
+        if let u = inUnit { AudioOutputUnitStop(u); AudioComponentInstanceDispose(u) }  // the one unit with echo cancellation
         outUnit = nil
         inUnit = nil
     }

@@ -69,6 +69,11 @@ public final class HaruEngine: @unchecked Sendable {
 
     public var tokenizer: HaruTokenizer { model.tokenizer! }
 
+    /// MLX memory (active, cache, peak) in bytes, read on the MLX thread.
+    public func mlxMemory() async throws -> (active: Int, cache: Int, peak: Int) {
+        try await worker.run { (Memory.activeMemory, Memory.cacheMemory, Memory.peakMemory) }
+    }
+
     /// A throwaway conversation fed at the live cadence (blocks of 1/20 frame, CPU kept awake by polling,
     /// as the pump): the first call of every shape is slow, and the step measured here sets the playback lead.
     public func measureStep(settings: ConversationSettings, frames: Int = 12) async throws {

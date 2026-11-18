@@ -33,6 +33,18 @@ final class StudioModel {
     var devices: [Device] = audioDevices()
     var inputName = ""
     var outputName = ""
+    /// The system defaults when last seen: a selection equal to them follows the system.
+    private var defaultInputName = ""
+    private var defaultOutputName = ""
+    private var watcher: DeviceWatcher?
+    /// Apple's echo canceller (voice processing): for speakers without headphones.
+    var echoCancellation = UserDefaults.standard.bool(forKey: "echoCancellation") {
+        didSet { UserDefaults.standard.set(echoCancellation, forKey: "echoCancellation") }
+    }
+    /// Writes what the model heard to the log folder at the end of a conversation (troubleshooting).
+    var keepHeardAudio = UserDefaults.standard.bool(forKey: "keepHeardAudio") {
+        didSet { UserDefaults.standard.set(keepHeardAudio, forKey: "keepHeardAudio") }
+    }
     var guidance: Float = 1.5 { didSet { schedulePrepare() } }
     var speakFirst = false { didSet { schedulePrepare() } }
     /// Added to the "start speaking" logit: > 0 makes Haru take the turn sooner (upstream `eop_bias`). 0.5 by
@@ -76,6 +88,9 @@ final class StudioModel {
         }
         inputName = devices.first { $0.id == defaultDevice(input: true) }?.name ?? ""
         outputName = devices.first { $0.id == defaultDevice(input: false) }?.name ?? ""
+        defaultInputName = inputName
+        defaultOutputName = outputName
+        watcher = DeviceWatcher { [weak self] in Task { @MainActor in self?.devicesChanged() } }
         loadExampleCard()
         Task { await load() }
     }
@@ -88,6 +103,24 @@ final class StudioModel {
         config.temperature = temperature
         let prompt = (try? library?.render(card, language: language)) ?? ""
         return ConversationSettings(systemPrompt: prompt, reference: reference, config: config)
+    }
+
+    /// Headphones plugged in or out, defaults changed: refresh the list; a selection that followed
+    /// the system default (or whose device is gone) moves to the new default. Not during a conversation.
+    private func devicesChanged() {
+        devices = audioDevices()
+        let newIn = devices.first { $0.id == defaultDevice(input: true) }?.name ?? ""
+        let newOut = devices.first { $0.id == defaultDevice(input: false) }?.name ?? ""
+        let hasIn = devices.contains { $0.name == inputName && $0.inputs > 0 }
+        let hasOut = devices.contains { $0.name == outputName && $0.outputs > 0 }
+        if phase != .live {
+            if inputName == defaultInputName || !hasIn { inputName = newIn }
+            if outputName == defaultOutputName || !hasOut { outputName = newOut }
+        }
+        defaultInputName = newIn
+        defaultOutputName = newOut
+        StudioLog.write("devices changed: input \(inputName), output \(outputName) (system: \(newIn) / \(newOut))" +
+                        (phase == .live ? " — applies to the next conversation" : ""))
     }
 
     // MARK: - Model
@@ -184,7 +217,8 @@ final class StudioModel {
                         "guidance \(guidance), eagerness \(eagerness), temperature \(temperature), margin \(Int(marginMs)) ms, \(precision.rawValue)")
         let feeder = StudioFeeder()
         let audio = DuplexAudio(input: input, output: output, bufferMs: 2, marginMs: marginMs,
-                                frameSamples: engine.frameSamples * 2, stepMs: engine.stepSeconds * 1000) { feeder.push($0) }
+                                frameSamples: engine.frameSamples * 2, stepMs: engine.stepSeconds * 1000,
+                                echoCancellation: echoCancellation) { feeder.push($0) }
         let playback = DispatchQueue(label: "haru.studio.playback", qos: .userInteractive)
         do {
             let conversation = try await engine.begin(settings, onUserLevel: { [weak self] index, level in
@@ -196,8 +230,10 @@ final class StudioModel {
             conversation.recordsUser = true
             feeder.target = conversation
             try audio.start()
-            StudioLog.write(String(format: "devices: input %@ %.0f Hz (listed %.0f), output %@ %.0f Hz (listed %.0f)",
-                                   input.name, currentRate(input.id), input.rate, output.name, currentRate(output.id), output.rate))
+            StudioLog.write(String(format: "devices: input %@ %.0f Hz (listed %.0f), output %@ %.0f Hz (listed %.0f), echo cancellation %@, lead %.0f ms",
+                                   input.name, audio.runningInputRate, input.rate, output.name, audio.runningOutputRate, output.rate,
+                                   echoCancellation ? "on" : "off", audio.lead * 1000))
+            for note in audio.notes { StudioLog.write("audio: \(note)") }
             self.feeder = feeder
             self.audio = audio
             self.conversation = conversation
@@ -278,12 +314,14 @@ final class StudioModel {
                 StudioLog.write(String(format: "microphone: %.0f samples/s reached the model after resampling (expected 48000), %.1f s of user audio kept",
                                        feeder.rate, Double(lastUser.count) / 24_000))
             }
-            // What the model heard, for troubleshooting (local log folder, overwritten each time).
+            // What the model heard, for troubleshooting (opt-in; local log folder, overwritten each time).
             let heard = StudioLog.url.deletingLastPathComponent().appendingPathComponent("last-user-heard.wav")
-            try? AudioFile.writeWAV(lastUser, to: heard)
+            if keepHeardAudio { try? AudioFile.writeWAV(lastUser, to: heard) } else { try? FileManager.default.removeItem(at: heard) }
             updateTimeline(force: true)
-            let turns = TurnDetector().turns(user: TurnDetector().segments(userLevels),
-                                             model: TurnDetector().segments(modelLevels), text: frameText)
+            var userDetector = TurnDetector()
+            userDetector.thresholdDB = TurnDetector.adaptiveThreshold(userLevels)
+            let turns = userDetector.turns(user: userDetector.segments(userLevels),
+                                           model: TurnDetector().segments(modelLevels), text: frameText)
             let summary = turns.replySummary
             report += String(format: " · %d/%d turns answered, median reply delay %@", summary.answered, turns.count,
                              summary.median.map { String(format: "%+.2f s", $0) } ?? "—")
@@ -297,7 +335,25 @@ final class StudioModel {
                 return [0.1, 0.5, 0.9, 0.99].map { String(format: "%.0f", s[min(s.count - 1, Int($0 * Double(s.count)))]) }.joined(separator: "/")
             }
             StudioLog.write("frame levels dBFS p10/p50/p90/p99: you \(percentiles(userLevels)), haru \(percentiles(modelLevels)) " +
-                            "(speech threshold \(Int(TurnDetector().thresholdDB)))")
+                            "(your speech threshold \(Int(userDetector.thresholdDB)), Haru's -40)")
+            // Echo: your microphone while Haru speaks against while both are quiet.
+            let pairs = zip(userLevels, modelLevels)
+            let whileHaru = pairs.filter { $0.1 > -40 }.map(\.0).sorted(), whileQuiet = pairs.filter { $0.1 < -70 }.map(\.0).sorted()
+            if !whileHaru.isEmpty, !whileQuiet.isEmpty {
+                StudioLog.write(String(format: "echo: your mic at %.0f dBFS (median) while Haru speaks, %.0f while he is silent (%+.0f dB)",
+                                       whileHaru[whileHaru.count / 2], whileQuiet[whileQuiet.count / 2],
+                                       whileHaru[whileHaru.count / 2] - whileQuiet[whileQuiet.count / 2]))
+            }
+            let memory = ProcessMemory.footprint()
+            StudioLog.write(String(format: "memory: app footprint %.1f GB (peak %.1f GB)", Double(memory.current) / 1e9, Double(memory.peak) / 1e9))
+            if let engine {
+                Task {
+                    if let m = try? await engine.mlxMemory() {
+                        StudioLog.write(String(format: "memory: MLX active %.1f GB, cache %.2f GB, peak %.1f GB",
+                                               Double(m.active) / 1e9, Double(m.cache) / 1e9, Double(m.peak) / 1e9))
+                    }
+                }
+            }
             for t in turns {
                 StudioLog.write(String(format: "turn you %.2f-%.2f s -> %@", t.user.start, t.user.end,
                                        t.reply.map { String(format: "haru %.2f-%.2f s (%+.2f s) %@", $0.start, $0.end, t.delay!, t.text) } ?? "no reply"))
@@ -333,7 +389,9 @@ struct TimelineEntry: Identifiable, Equatable {
 
     static func build(user: [Float], model: [Float], text: [(Int, String)]) -> [TimelineEntry] {
         let detector = TurnDetector()
-        let u = detector.segments(user), m = detector.segments(model)
+        var userDetector = TurnDetector()
+        userDetector.thresholdDB = TurnDetector.adaptiveThreshold(user)
+        let u = userDetector.segments(user), m = detector.segments(model)
         let turns = detector.turns(user: u, model: m, text: text)
         var delays: [Double: Double] = [:]  // reply start -> delay
         for t in turns { if let r = t.reply, let d = t.delay, delays[r.start] == nil { delays[r.start] = d } }

@@ -69,7 +69,9 @@ struct ContentView: View {
                         Slider(value: $model.marginMs, in: 5 ... 80, step: 5)
                         Text("\(Int(model.marginMs)) ms").monospacedDigit()
                     }
+                    Toggle("Echo cancellation (speakers, no headphones)", isOn: $model.echoCancellation)
                     Toggle("Haru speaks first", isOn: $model.speakFirst)
+                    Toggle("Keep what Haru heard (troubleshooting, local file)", isOn: $model.keepHeardAudio)
                     Picker("Precision", selection: $model.precision) {
                         Text("BF16 (as published)").tag(HaruPrecision.bf16)
                         Text("8-bit (smaller, faster)").tag(HaruPrecision.int8)
