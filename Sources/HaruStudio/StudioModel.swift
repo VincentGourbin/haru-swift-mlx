@@ -58,8 +58,11 @@ final class StudioModel {
     private var frameText: [(Int, String)] = []
     private(set) var timeline: [TimelineEntry] = []
     private var lastTimelineUpdate = Date.distantPast
+    private var lastLiveLog = Date.distantPast
+    private var loggedEntries = Set<String>()
     private var lastUser: [Float] = []
     private var meter: Timer?
+    private var feeder: StudioFeeder?
     private var prepareTask: Task<Void, Never>?
 
     init() {
@@ -165,6 +168,7 @@ final class StudioModel {
             phase = .failed("Microphone access denied (System Settings › Privacy & Security › Microphone).")
             return
         }
+        devices = audioDevices()  // fresh rates and plugged-in devices
         guard let input = devices.first(where: { $0.name == inputName && $0.inputs > 0 }) ?? findDevice(nil, input: true),
               let output = devices.first(where: { $0.name == outputName && $0.outputs > 0 }) ?? findDevice(nil, input: false)
         else { phase = .failed("No audio device"); return }
@@ -175,6 +179,7 @@ final class StudioModel {
         modelLevels = []
         frameText = []
         timeline = []
+        loggedEntries = []
         StudioLog.write("start: input \(input.name), output \(output.name), voice \(String(format: "%.0f", voiceSeconds)) s, " +
                         "guidance \(guidance), eagerness \(eagerness), temperature \(temperature), margin \(Int(marginMs)) ms, \(precision.rawValue)")
         let feeder = StudioFeeder()
@@ -191,6 +196,9 @@ final class StudioModel {
             conversation.recordsUser = true
             feeder.target = conversation
             try audio.start()
+            StudioLog.write(String(format: "devices: input %@ %.0f Hz (listed %.0f), output %@ %.0f Hz (listed %.0f)",
+                                   input.name, currentRate(input.id), input.rate, output.name, currentRate(output.id), output.rate))
+            self.feeder = feeder
             self.audio = audio
             self.conversation = conversation
             phase = .live
@@ -232,6 +240,26 @@ final class StudioModel {
         inputLevel = audio.inputLevel
         outputLevel = audio.outputLevel
         latencyMs = audio.recentLatency().map { $0 * 1000 }
+        liveLog()
+    }
+
+    /// While live: a line every 3 s, and each stretch of speech once it is over (for watching a session).
+    private func liveLog() {
+        let now = Double(max(userLevels.count, modelLevels.count)) * TurnDetector().frameSeconds
+        for e in timeline where e.segment.end < now - 0.8 && !loggedEntries.contains(e.id) {
+            loggedEntries.insert(e.id)
+            if e.speaker == .user {
+                StudioLog.write(String(format: "live %.1f s  YOU   %.1f-%.1f s", now, e.segment.start, e.segment.end))
+            } else {
+                StudioLog.write(String(format: "live %.1f s  HARU  %.1f-%.1f s%@  %@", now, e.segment.start, e.segment.end,
+                                       e.delay.map { String(format: " (reply %+.1f s)", $0) } ?? "", e.text))
+            }
+        }
+        guard Date().timeIntervalSince(lastLiveLog) >= 3 else { return }
+        lastLiveLog = Date()
+        let you = userLevels.suffix(22).max() ?? -120, haru = modelLevels.suffix(22).max() ?? -120
+        StudioLog.write(String(format: "live %.1f s  audio latency %@ · peak level last 3 s: you %.0f dBFS, haru %.0f dBFS",
+                               now, latencyMs.map { String(format: "%.0f ms", $0) } ?? "-", you, haru))
     }
 
     func stop() {
@@ -246,6 +274,13 @@ final class StudioModel {
                             r.p50 * 1000, r.p95 * 1000, r.underruns,
                             steps.isEmpty ? 0 : steps[steps.count / 2] * 1000, p99)
             lastUser = conversation.userAudio
+            if let feeder {
+                StudioLog.write(String(format: "microphone: %.0f samples/s reached the model after resampling (expected 48000), %.1f s of user audio kept",
+                                       feeder.rate, Double(lastUser.count) / 24_000))
+            }
+            // What the model heard, for troubleshooting (local log folder, overwritten each time).
+            let heard = StudioLog.url.deletingLastPathComponent().appendingPathComponent("last-user-heard.wav")
+            try? AudioFile.writeWAV(lastUser, to: heard)
             updateTimeline(force: true)
             let turns = TurnDetector().turns(user: TurnDetector().segments(userLevels),
                                              model: TurnDetector().segments(modelLevels), text: frameText)
@@ -315,7 +350,16 @@ struct TimelineEntry: Identifiable, Equatable {
 /// Microphone blocks to the conversation (audio thread).
 final class StudioFeeder: @unchecked Sendable {
     var target: LiveConversation?
-    func push(_ samples: UnsafeBufferPointer<Float>) { target?.push48k(samples) }
+    private var first = 0.0, last = 0.0, count = 0
+    func push(_ samples: UnsafeBufferPointer<Float>) {
+        let t = ProcessInfo.processInfo.systemUptime
+        if count == 0 { first = t }
+        last = t
+        count += samples.count
+        target?.push48k(samples)
+    }
+    /// Samples per second delivered by the audio thread (read after the conversation).
+    var rate: Double { last > first ? Double(count) / (last - first) : 0 }
 }
 
 func upsample2x(_ x: [Float]) -> [Float] {

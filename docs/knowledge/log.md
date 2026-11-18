@@ -43,3 +43,9 @@
 - Latence audio : aucun gain ; les 117 ms du micro et des haut-parleurs réels restent à décomposer (journal de l'app, prochaine session).
 - 8 bits : distance à fp32 double de celle du bf16 (état caché 4e-2 contre 2,1e-2) ; reste une option.
 - `haru run --seeds N --eop-bias B` (une charge pour N graines ; isolation vérifiée, mêmes jetons qu'en processus séparés).
+
+## 2026-11-18 (soir) — Sessions réelles de Vincent, suivies en direct
+- Haut-parleurs du MacBook sans casque : Haru s'entend lui-même (transcription de ce que le modèle a reçu : sa propre voix + les « Stop » de Vincent) ; les segments « You » recopient ceux de Haru. Il faut un casque, ou l'annulation d'écho (voice processing) à ajouter.
+- AirPods Max : passent à 24 kHz dès que le micro s'ouvre (liste à 48 kHz avant) ; le rééchantillonnage d'entrée suit, 47 983 éch./s arrivent au modèle. Latence audio 246 ms dont 178 ms de sortie Bluetooth ; micro de l'iPhone (Continuité) : +127 ms d'entrée.
+- Avec casque, ce que le modèle a reçu est intelligible (Voxtral : « Attends… Raconte-moi une blague. Stop. ») mais Haru ne suit pas la demande. haru_mlx sur **le même enregistrement** (carte fr, sans voix, 4 graines) : même comportement (présentation, monologue, aucune blague). Comportement du modèle de base, pas du portage.
+- App : périphériques relus à chaque démarrage de conversation ; journal en direct (tours, niveaux) ; `last-user-heard.wav` (ce que le modèle a reçu, dossier de logs local) ; fréquences réelles des périphériques.

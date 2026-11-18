@@ -91,6 +91,11 @@ public func audioDevices() -> [Device] {
     }
 }
 
+/// The device's current nominal sample rate (it can change once its microphone is in use: Bluetooth).
+public func currentRate(_ id: AudioDeviceID) -> Double {
+    property(id, kAudioDevicePropertyNominalSampleRate, kAudioObjectPropertyScopeGlobal, Float64(0))
+}
+
 public func defaultDevice(input: Bool) -> AudioDeviceID {
     property(AudioObjectID(kAudioObjectSystemObject),
              input ? kAudioHardwarePropertyDefaultInputDevice : kAudioHardwarePropertyDefaultOutputDevice,
