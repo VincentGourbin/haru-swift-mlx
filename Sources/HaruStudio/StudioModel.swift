@@ -54,6 +54,15 @@ final class StudioModel {
     }
     var temperature: Float = 0.7 { didSet { schedulePrepare() } }
     var marginMs = 15.0
+    /// Prompter: a local LLM chooses what Haru says (Haru keeps its voice and says only those lines).
+    var prompterOn = UserDefaults.standard.bool(forKey: "prompterOn") {
+        didSet { UserDefaults.standard.set(prompterOn, forKey: "prompterOn") }
+    }
+    var prompterURL = UserDefaults.standard.string(forKey: "prompterURL") ?? "http://127.0.0.1:8089/v1/chat/completions" {
+        didSet { UserDefaults.standard.set(prompterURL, forKey: "prompterURL") }
+    }
+    /// What the prompter heard and whispered, newest last (shown under the timeline).
+    private(set) var whispers: [String] = []
 
     // Live
     var transcript = ""
@@ -76,6 +85,12 @@ final class StudioModel {
     private var meter: Timer?
     private var feeder: StudioFeeder?
     private var prepareTask: Task<Void, Never>?
+    private var listener: LiveListener?
+    private var decider: Decider?
+    private var prompter: Prompter?
+    private var userThreshold: Float = -40
+    private var userSpeaking = false
+    private var lastUserSpeech = 0
 
     init() {
         if let path = UserDefaults.standard.string(forKey: "voicePath") ?? ProcessInfo.processInfo.environment["HARU_TEST_VOICE"] {
@@ -147,6 +162,56 @@ final class StudioModel {
         card = preset
     }
 
+    /// A reference voice made by macOS speech synthesis in the card's language, kept in Application Support
+    /// (never in the repository). Haru says French far better with a French reference
+    /// (docs/knowledge/investigations/souffleur-forcage-texte.md).
+    func makeSyntheticVoice() async {
+        let texts = [
+            "fr": "Bonjour, je suis ravie de te parler aujourd'hui. Je m'appelle Haru, j'ai vingt-deux ans et je termine ma licence. Le matin, je vais courir au bord de la rivière, ça me vide la tête. J'aime bien discuter de tout : de technologie, d'histoire, d'économie, et de ce qui se passe dans le monde. Et toi, qu'est-ce qui te passionne en ce moment ? Raconte-moi, je t'écoute.",
+            "en": "Hi, I'm really glad to talk with you today. My name is Haru, I'm twenty-two and I'm finishing my degree. In the morning I go running by the river, it clears my head. I like talking about everything: technology, history, economics, and what's going on in the world. And you, what are you into these days? Tell me, I'm listening.",
+        ]
+        let locale = speechLocale(language).identifier
+        guard let text = texts[language] ?? texts["en"],
+              // Haru's example cards are a young woman: no male voice, known female voices first (most macOS
+              // voices declare no gender), then the best quality.
+              let voice = Self.syntheticVoice(locale) else {
+            StudioLog.write("synthetic voice: no macOS voice for \(locale)")
+            return
+        }
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Haru Studio")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("synthetic-voice-\(language).caf")
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = voice
+        let synthesizer = AVSpeechSynthesizer()
+        var file: AVAudioFile?
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            var finished = false
+            synthesizer.write(utterance) { buffer in
+                guard let pcm = buffer as? AVAudioPCMBuffer else { return }
+                if pcm.frameLength == 0 {
+                    if !finished { finished = true; done.resume() }
+                    return
+                }
+                if file == nil { file = try? AVAudioFile(forWriting: url, settings: pcm.format.settings) }
+                try? file?.write(from: pcm)
+            }
+        }
+        file = nil  // closes the file
+        StudioLog.write("synthetic voice: \(voice.name) (\(locale)) -> \(url.lastPathComponent)")
+        voiceURL = url
+    }
+
+    static func syntheticVoice(_ locale: String) -> AVSpeechSynthesisVoice? {
+        let female: Set<String> = ["Flo", "Sandy", "Shelley", "Amélie", "Audrey", "Marie", "Samantha", "Ava", "Zoe", "Allison",
+                                   "Kyoko", "Tingting", "Yuna", "Monica", "Anna", "Luciana", "Milena"]
+        let voices = AVSpeechSynthesisVoice.speechVoices().filter { $0.language == locale && $0.gender != .male }
+        func rank(_ v: AVSpeechSynthesisVoice) -> (Int, Int) {
+            (v.gender == .female || female.contains(v.name.components(separatedBy: " ").first ?? "") ? 1 : 0, v.quality.rawValue)
+        }
+        return voices.max { rank($0) < rank($1) } ?? AVSpeechSynthesisVoice(language: locale)
+    }
+
     private func loadVoice() {
         guard let voiceURL else { reference = nil; voiceSeconds = 0; return }
         UserDefaults.standard.set(voiceURL.path, forKey: "voicePath")
@@ -215,13 +280,16 @@ final class StudioModel {
         loggedEntries = []
         StudioLog.write("start: input \(input.name), output \(output.name), voice \(String(format: "%.0f", voiceSeconds)) s, " +
                         "guidance \(guidance), eagerness \(eagerness), temperature \(temperature), margin \(Int(marginMs)) ms, \(precision.rawValue)")
+        whispers = []
+        await setUpPrompter()
         let feeder = StudioFeeder()
+        feeder.listener = listener
         let audio = DuplexAudio(input: input, output: output, bufferMs: 2, marginMs: marginMs,
                                 frameSamples: engine.frameSamples * 2, stepMs: engine.stepSeconds * 1000,
                                 echoCancellation: echoCancellation) { feeder.push($0) }
         let playback = DispatchQueue(label: "haru.studio.playback", qos: .userInteractive)
         do {
-            let conversation = try await engine.begin(settings, onUserLevel: { [weak self] index, level in
+            let conversation = try await engine.begin(settings, prompter: prompter, onUserLevel: { [weak self] index, level in
                 Task { @MainActor in self?.receivedUser(index, level) }
             }) { [weak self] frame in
                 playback.async { audio.receive(index: frame.index, pcm: upsample2x(frame.audio), step: frame.seconds) }
@@ -237,6 +305,7 @@ final class StudioModel {
             self.feeder = feeder
             self.audio = audio
             self.conversation = conversation
+            listener?.start()
             phase = .live
             meter = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
                 Task { @MainActor in self?.poll() }
@@ -257,6 +326,68 @@ final class StudioModel {
     private func receivedUser(_ index: Int, _ level: Float) {
         set(&userLevels, index, level)
         updateTimeline()
+        if prompter != nil { followUser(index, level) }
+    }
+
+    // MARK: - Prompter
+
+    /// Speech recognition on the device and a reachable LLM server, or no prompter (logged).
+    private func setUpPrompter() async {
+        listener = nil; decider = nil; prompter = nil
+        guard prompterOn, let engine else { return }
+        guard let url = URL(string: prompterURL), await Decider.reachable(url) else {
+            StudioLog.write("prompter: no LLM server at \(prompterURL) — off for this conversation")
+            whispers = ["No LLM server at \(prompterURL): Haru speaks on its own."]
+            return
+        }
+        guard await LiveListener.authorize() else {
+            StudioLog.write("prompter: speech recognition not authorized (System Settings › Privacy & Security › Speech Recognition)")
+            whispers = ["Speech recognition not authorized: Haru speaks on its own."]
+            return
+        }
+        guard let listener = LiveListener(locale: speechLocale(language)) else {
+            StudioLog.write("prompter: no speech recognizer for \(language)")
+            whispers = ["No speech recognizer for \(language)."]
+            return
+        }
+        let prompter = engine.makePrompter()
+        prompter.onEvent = { _, message in StudioLog.write("prompter: " + message) }
+        self.listener = listener
+        self.decider = Decider(url: url, language: language)
+        self.prompter = prompter
+        userThreshold = -40
+        userSpeaking = false
+        StudioLog.write("prompter: on, speech recognition \(speechLocale(language).identifier) \(listener.onDevice ? "on the device" : "NOT on the device"), LLM \(prompterURL)")
+    }
+
+    /// End of an utterance (5 quiet frames after speech, as TurnDetector): what was heard goes to the LLM,
+    /// its line to the prompter.
+    private func followUser(_ index: Int, _ level: Float) {
+        if index % 8 == 0 {
+            userThreshold = TurnDetector.adaptiveThreshold(userLevels)
+            prompter?.setUserThreshold(userThreshold)
+        }
+        if level > userThreshold {
+            userSpeaking = true
+            lastUserSpeech = index
+            return
+        }
+        guard userSpeaking, index - lastUserSpeech >= 5, let listener, let decider, let prompter else { return }
+        userSpeaking = false
+        let heard = listener.cut()
+        guard !heard.isEmpty else { return }
+        let end = Double(lastUserSpeech + 1) * TurnDetector().frameSeconds
+        Task {
+            do {
+                let (line, seconds) = try await decider.reply(to: heard)
+                prompter.say(line)
+                StudioLog.write(String(format: "prompter: heard «%@» (end %.1f s) -> «%@» (LLM %.2f s)", heard, end, line, seconds))
+                whispers.append("«\(heard)» → «\(line)»")
+            } catch {
+                StudioLog.write("prompter: LLM failed for «\(heard)»: \(error.localizedDescription)")
+                whispers.append("«\(heard)» → (LLM failed)")
+            }
+        }
     }
 
     private func set(_ levels: inout [Float], _ index: Int, _ level: Float) {
@@ -300,6 +431,7 @@ final class StudioModel {
 
     func stop() {
         meter?.invalidate()
+        listener?.stop()
         audio?.stop()
         conversation?.stopAndWait()
         if let audio, let conversation {
@@ -361,6 +493,9 @@ final class StudioModel {
         }
         audio = nil
         conversation = nil
+        listener = nil
+        decider = nil
+        prompter = nil
         inputLevel = 0
         outputLevel = 0
         phase = .idle
@@ -408,6 +543,7 @@ struct TimelineEntry: Identifiable, Equatable {
 /// Microphone blocks to the conversation (audio thread).
 final class StudioFeeder: @unchecked Sendable {
     var target: LiveConversation?
+    var listener: LiveListener?
     private var first = 0.0, last = 0.0, count = 0
     func push(_ samples: UnsafeBufferPointer<Float>) {
         let t = ProcessInfo.processInfo.systemUptime
@@ -415,6 +551,7 @@ final class StudioFeeder: @unchecked Sendable {
         last = t
         count += samples.count
         target?.push48k(samples)
+        listener?.append(samples)
     }
     /// Samples per second delivered by the audio thread (read after the conversation).
     var rate: Double { last > first ? Double(count) / (last - first) : 0 }

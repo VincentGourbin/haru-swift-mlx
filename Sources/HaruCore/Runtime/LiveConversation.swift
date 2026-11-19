@@ -87,6 +87,7 @@ struct LivePump {
     let onFrame: @Sendable (Frame) -> Void
     /// Level (dBFS) of each complete 24 kHz user frame, with its index, as it is fed (MLX thread).
     var onUserLevel: (@Sendable (Int, Float) -> Void)?
+    var prompter: Prompter?
     /// Seconds before a user frame completes during which the pump polls instead of napping. Default:
     /// always (more than a frame). Napping 1 ms between audio blocks let the CPU clock drop after ~20 s
     /// and the step rose from 46 to 57 ms (measured 2026-11-17; docs/knowledge/pitfalls/cpu-clock-drops-
@@ -106,6 +107,7 @@ struct LivePump {
         raw.reserveCapacity(48_000)
         var fed = 0  // 24 kHz samples fed
         var energy: Float = 0  // sum of squares of the user frame being filled
+        var userLevel: Float = -120  // level of the last complete user frame (the one the next step consumes)
         let rate = Double(conversation.sampleRate)
         while conversation.drain(into: &raw) {
             // One pool per iteration: the pump is a single job for the whole conversation, so the Metal
@@ -118,12 +120,13 @@ struct LivePump {
                 raw.removeFirst(even)
                 session.feed(pcm)
                 conversation.keep(pcm)
-                if let onUserLevel {
+                if onUserLevel != nil || prompter != nil {
                     let size = conversation.frameSamples
                     for (i, v) in pcm.enumerated() {
                         energy += v * v
                         if (fed + i + 1) % size == 0 {
-                            onUserLevel((fed + i + 1) / size - 1, 10 * log10(max(energy / Float(size), 1e-12)))
+                            userLevel = 10 * log10(max(energy / Float(size), 1e-12))
+                            onUserLevel?((fed + i + 1) / size - 1, userLevel)
                             energy = 0
                         }
                     }
@@ -133,6 +136,7 @@ struct LivePump {
             while session.framesReady > 0 {
                 guard let frame = try? session.step() else { return false }
                 conversation.record(frame.seconds)
+                prompter?.observe(index: frame.index, output: frame.audio, userLevel: userLevel)
                 onFrame(frame)
                 if frame.done { conversation.stop() }
             }

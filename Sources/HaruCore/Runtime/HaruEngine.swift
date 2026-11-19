@@ -69,6 +69,11 @@ public final class HaruEngine: @unchecked Sendable {
 
     public var tokenizer: HaruTokenizer { model.tokenizer! }
 
+    /// A prompter for this model's tokens and frame rate.
+    public func makePrompter(_ settings: Prompter.Settings = Prompter.Settings()) -> Prompter {
+        Prompter(tokenizer: model.tokenizer!, config: model.config, settings: settings)
+    }
+
     /// MLX memory (active, cache, peak) in bytes, read on the MLX thread.
     public func mlxMemory() async throws -> (active: Int, cache: Int, peak: Int) {
         try await worker.run { (Memory.activeMemory, Memory.cacheMemory, Memory.peakMemory) }
@@ -112,16 +117,23 @@ public final class HaruEngine: @unchecked Sendable {
     /// Starts a live conversation: model frame 0 is delivered at once, then frame k + 1 as soon as user
     /// frame k is complete. `onFrame` runs on the MLX thread: keep it short (hand off and return).
     /// `onUserLevel` (same thread) gets the level in dBFS of each complete user frame, for timelines.
-    public func begin(_ settings: ConversationSettings, onUserLevel: (@Sendable (Int, Float) -> Void)? = nil,
+    /// With a `prompter`, its lines replace Haru's text (see Prompter) and it observes every frame.
+    public func begin(_ settings: ConversationSettings, prompter: Prompter? = nil,
+                      onUserLevel: (@Sendable (Int, Float) -> Void)? = nil,
                       onFrame: @escaping @Sendable (Frame) -> Void) async throws -> LiveConversation {
         try await prepare(settings)
         guard let (_, session, first) = prepared else { throw HaruError.invalidRequest("nothing prepared") }
         prepared = nil
-        try await worker.run { session.retune(settings.config) }  // sampling may have changed since `prepare`
+        try await worker.run {
+            session.retune(settings.config)  // sampling may have changed since `prepare`
+            session.textOverride = prompter.map { p in { p.override($0, $1) } }
+            session.guidanceOverride = prompter.map { p in { p.guidance($0) } }
+        }
         let conversation = LiveConversation(sampleRate: sampleRate, frameSamples: frameSamples)
         onFrame(first)
         worker.submit {
-            LivePump(session: session, conversation: conversation, onFrame: onFrame, onUserLevel: onUserLevel).run()
+            LivePump(session: session, conversation: conversation, onFrame: onFrame, onUserLevel: onUserLevel,
+                     prompter: prompter).run()
         }
         return conversation
     }

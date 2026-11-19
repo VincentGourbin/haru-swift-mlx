@@ -12,6 +12,7 @@
     <key>LSMinimumSystemVersion</key><string>15.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSSpeechRecognitionUsageDescription</key><string>With the prompter on, your words are transcribed on this Mac so that a local model can choose what Haru says.</string>
     <key>NSMicrophoneUsageDescription</key><string>Haru listens to you to hold a spoken conversation, entirely on this Mac.</string>
 </dict>
 </plist>

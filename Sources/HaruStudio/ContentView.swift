@@ -35,6 +35,8 @@ struct ContentView: View {
                         Text(model.voiceURL?.lastPathComponent ?? "No voice").lineLimit(1).truncationMode(.middle)
                         Spacer()
                         Button("Choose…") { pickingVoice = true }
+                        Button("Synthetic") { Task { await model.makeSyntheticVoice() } }
+                            .help("A voice made on this Mac by macOS speech synthesis, in the card's language (free to use). Haru speaks a language better with a voice of that language.")
                     }
                     if model.voiceSeconds > 0 {
                         Text(String(format: "%.0f s used (silence trimmed, last 3 min)", model.voiceSeconds))
@@ -72,6 +74,11 @@ struct ContentView: View {
                     Toggle("Echo cancellation (speakers, no headphones)", isOn: $model.echoCancellation)
                     Toggle("Haru speaks first", isOn: $model.speakFirst)
                     Toggle("Keep what Haru heard (troubleshooting, local file)", isOn: $model.keepHeardAudio)
+                    Toggle("Prompter: a local LLM chooses what Haru says", isOn: $model.prompterOn)
+                        .help("Apple speech recognition on this Mac hears you; an OpenAI-compatible server on this Mac writes Haru's line; Haru says it in its own voice and says nothing else.")
+                    if model.prompterOn {
+                        TextField("LLM server", text: $model.prompterURL).font(.caption.monospaced())
+                    }
                     Picker("Precision", selection: $model.precision) {
                         Text("BF16 (as published)").tag(HaruPrecision.bf16)
                         Text("8-bit (smaller, faster)").tag(HaruPrecision.int8)
@@ -146,6 +153,15 @@ struct ConversationPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .onChange(of: model.timeline) { proxy.scrollTo("end", anchor: .bottom) }
+            }
+            if !model.whispers.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Prompter").font(.caption.bold())
+                    ForEach(Array(model.whispers.suffix(4).enumerated()), id: \.offset) { Text($0.element).font(.caption) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             }
             if !model.report.isEmpty {
                 Text(model.report).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)

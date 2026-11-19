@@ -68,7 +68,7 @@ public final class Prompter: @unchecked Sendable {
         case listening                               // interrupted: PAD while the user speaks
     }
 
-    public let settings: Settings
+    public private(set) var settings: Settings
     public let frameSeconds: Double
     private let pad: Int, eop: Int
     private let encode: (String) -> [Int]
@@ -121,6 +121,14 @@ public final class Prompter: @unchecked Sendable {
     }
 
     public var pending: Int { lock.withLock { queue.count } }
+
+    /// The user's speech threshold follows the microphone (TurnDetector.adaptiveThreshold) during a session.
+    public func setUserThreshold(_ db: Float) { lock.withLock { settings.userDB = db } }
+
+    /// True while a line is being said (or its silence held).
+    public var busy: Bool {
+        lock.withLock { if case .idle = state { return !queue.isEmpty } else { return true } }
+    }
 
     /// DuplexSession.textOverride: the token for frame `index`, or nil to keep Haru's own.
     public func override(_ index: Int, _ sampled: Int) -> Int? {
