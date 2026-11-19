@@ -35,10 +35,11 @@ public final class Prompter: @unchecked Sendable {
         public var graceFrames = 3
         /// Wait for Haru's own EOP instead of making it speak at the line's time.
         public var waitForTurn = false
-        /// Write a line the way Haru writes: phrase by phrase (split at punctuation, at most
-        /// `chunkTokens` tokens), each one opened by an EOP and followed by PAD frames long enough for the
-        /// voice to catch up. Without it, a long line runs seconds ahead of the voice, which then drifts.
-        public var chunked = true
+        /// Write a line phrase by phrase (split at punctuation, at most `chunkTokens` tokens), each one
+        /// opened by an EOP and followed by PAD frames sized on its spoken length, as Haru's own text
+        /// looks. Measured worse: the voice tends to stop after the first pause (English, 5 seeds: 18/25
+        /// lines said against 24/25 in one go). Off by default.
+        public var chunked = false
         public var chunkTokens = 12
         /// Speaking time per character, to size the pauses (French TTS-like pace: about 14 characters/s).
         public var secondsPerCharacter = 0.07

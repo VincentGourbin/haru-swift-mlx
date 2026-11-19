@@ -88,26 +88,37 @@ fin + temps ASR + temps LLM mesurés (causal). Haru la dit via `--steer-plan`. T
 2,3 s après la fin de l'utilisateur, contre 0,5 à 1 s pour Haru seul ; une transcription en flux
 ramènerait la partie ASR vers 0,3 s.
 
-| | répliques dites (rappel ≥ 50 %) | rappel moyen par seed |
+« Dite » = rappel des mots de la réplique ≥ 50 % sur la piste de Haru (Voxtral) ; ça mesure si la voix a dit
+la phrase imposée, pas si la phrase répondait bien.
+
+| | répliques dites | rappel moyen par seed |
 |---|---|---|
-| anglais, ASR réel, découpé par phrases | **18/25** | 23 · 62 · 99 · 46 · 96 % |
+| anglais, ASR réel, **d'un bloc** | **24/25** | 100 · 75 · 100 · 96 · 100 % |
+| anglais, ASR réel, découpé par phrases | 18/25 | 23 · 62 · 99 · 46 · 96 % |
 | français, transcription parfaite, d'un bloc | 9/25 | 60 · 6 · 55 · 10 · 35 % |
 | français, transcription parfaite, découpé par phrases | 8/25 | 55 · 13 · 33 · 14 · 48 % |
 
-- Le décideur répond à la demande : « Raconte-moi une blague » → une blague, « une idée de recette » → des
-  pâtes aux légumes, une phrase mal entendue → « Sorry, I didn't quite catch that ».
-- Échec typique : **la voix prend du retard sur le texte.** Dans un seed anglais, « I had toast and
-  coffee » est dit dix secondes plus tard, pendant la réplique suivante ; Haru finit d'abord ce qu'il avait
-  commencé à dire de lui-même. Le découpage par phrases (EOP + pauses dimensionnées sur la longueur
-  parlée) n'y change pas grand-chose en français.
-- En français, une partie des répliques sort inintelligible, même avec la voix de référence française.
+- **Le découpage par phrases casse la voix** : avec le texte frame par frame (seed 0), la voix dit le premier
+  morceau puis se tait après la pause insérée, alors que le texte continue (« … this morning. » dit,
+  « It was pretty quick. » muet). D'un bloc, 92 % des jetons de mots imposés sont voisés sur 5 seeds. Le
+  découpage est désactivé par défaut (`--steer-chunked` pour l'essayer).
+- Le décideur répond à la demande quand il l'a bien entendue : « Raconte-moi une blague » → une blague,
+  « une idée de recette » → des pâtes aux légumes. En anglais, la transcription n'a compris que 3 des
+  5 interventions ; pour les deux autres, Gemma répond à ce qu'il a cru entendre (« Sorry, I didn't quite
+  catch that », « Okay… goodbye then ») : dites, mais pas de vraies réponses.
+- Haru en train de parler au moment d'imposer n'est pas la cause des échecs : 55 % de répliques dites
+  quand Haru parlait dans la seconde d'avant, 37 % quand il se taisait (75 répliques, toutes conditions).
+  Ça rejoint le cas muet : c'est plutôt l'état « j'écoute » qui résiste.
+- En français, une partie des répliques sort inintelligible même d'un bloc et avec la voix de référence
+  française.
 - La transcription de l'utilisateur est le maillon faible : Voxtral Realtime n'a pas d'option de langue et
   bascule (« Telme Abou Atri Piyoudé Loftoté », « I call it black » pour « Raconte-moi une blague »). Les
-  versions 6 et 8 bits donnent le même texte. La reconnaissance d'Apple (sur l'appareil, en flux, avec la
-  langue fixée, et sans la carte graphique que Haru utilise) demande une autorisation qu'un outil en ligne
-  de commande n'obtient pas ; elle est à essayer dans l'app.
+  versions 6 bits (`mlx-community`) et 8 bits (`ellamind`), deux dossiers distincts, donnent le même texte :
+  le juge est cohérent, ce qui ne prouve pas qu'il ait raison. La reconnaissance d'Apple (sur l'appareil, en
+  flux, langue fixée, sans la carte graphique de Haru) demande une autorisation qu'un outil en ligne de
+  commande n'obtient pas ; à essayer dans l'app.
 
-**Bilan.** Le cadre fonctionne de bout en bout en anglais (72 % des répliques dites, deux seeds sur cinq
-presque parfaits). Reste à : empêcher la voix de dériver (attendre que la voix ait fini avant d'imposer, en
-surveillant le niveau de sortie plutôt qu'en comptant des frames) ; une transcription en flux à langue
-fixée ; le français.
+**Bilan.** En anglais, imposer une réplique entière d'un bloc fait dire à Haru 24 répliques sur 25, de 9 à
+15 mots, 1,9 s après la fin de l'utilisateur (dont 1,4 s de transcription par outil en ligne de commande et
+0,35 s de LLM). Restent : une transcription en flux à langue fixée, le français, et la mesure du pas de
+Haru quand l'ASR et le LLM tournent en même temps sur la carte graphique, avant de passer dans l'app.

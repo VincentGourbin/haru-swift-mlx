@@ -84,7 +84,7 @@ struct Run: AsyncParsableCommand {
     @Option(help: "now: Haru is made to speak at the line's time; eop: the line waits for Haru to take the turn.") var steerWhen = "now"
     @Option(help: "Seconds of forced text silence after a line.") var steerHold: Double = 3
     @Option(help: "Start-overs of a line when Haru's voice stays mute.") var steerRetries = 1
-    @Flag(help: "Write a line in one go instead of phrase by phrase with pauses.") var steerFlat = false
+    @Flag(help: "Write a line phrase by phrase with pauses (measured worse; for experiments).") var steerChunked = false
 
     func run() async throws {
         let model = try await modelOptions.load()
@@ -118,7 +118,7 @@ struct Run: AsyncParsableCommand {
             settings.holdSeconds = steerHold
             settings.retries = steerRetries
             settings.waitForTurn = steerWhen == "eop"
-            settings.chunked = !steerFlat
+            settings.chunked = steerChunked
             let p = Prompter(tokenizer: model.tokenizer!, config: model.config, settings: settings)
             p.onEvent = { _, message in print("prompter: " + message) }
             if let steer { p.say(steer, notBefore: steerAfter) }
