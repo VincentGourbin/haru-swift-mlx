@@ -84,6 +84,8 @@ struct Run: AsyncParsableCommand {
     @Option(help: "now: Haru is made to speak at the line's time; eop: the line waits for Haru to take the turn.") var steerWhen = "now"
     @Option(help: "Seconds of forced text silence after a line.") var steerHold: Double = 3
     @Option(help: "Start-overs of a line when Haru's voice stays mute.") var steerRetries = 1
+    @Option(help: "Frames to wait for Haru's own EOP before making it speak (0: at once).") var steerTurnWait = 0
+    @Flag(help: "Let Haru speak on its own between the prompter's lines (by default its text is held on PAD).") var steerFree = false
     @Flag(help: "Write a line phrase by phrase with pauses (measured worse; for experiments).") var steerChunked = false
 
     func run() async throws {
@@ -119,6 +121,8 @@ struct Run: AsyncParsableCommand {
             settings.retries = steerRetries
             settings.waitForTurn = steerWhen == "eop"
             settings.chunked = steerChunked
+            settings.turnWaitFrames = steerTurnWait
+            settings.exclusive = !steerFree
             let p = Prompter(tokenizer: model.tokenizer!, config: model.config, settings: settings)
             p.onEvent = { _, message in print("prompter: " + message) }
             if let steer { p.say(steer, notBefore: steerAfter) }

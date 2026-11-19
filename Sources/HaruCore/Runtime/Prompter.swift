@@ -35,6 +35,12 @@ public final class Prompter: @unchecked Sendable {
         public var graceFrames = 3
         /// Wait for Haru's own EOP instead of making it speak at the line's time.
         public var waitForTurn = false
+        /// Wait at most this many frames for Haru's own EOP, then make it speak (0: at once).
+        public var turnWaitFrames = 0
+        /// Haru says only the prompter's lines: between them its text is held on PAD. Measured (5 seeds,
+        /// 25 lines): English 25/25 lines said against 24/25, French 25/25 against 9/25, and no mute start.
+        /// Haru's own improvised answers were what made lines fail.
+        public var exclusive = true
         /// Write a line phrase by phrase (split at punctuation, at most `chunkTokens` tokens), each one
         /// opened by an EOP and followed by PAD frames sized on its spoken length, as Haru's own text
         /// looks. Measured worse: the voice tends to stop after the first pause (English, 5 seeds: 18/25
@@ -70,7 +76,7 @@ public final class Prompter: @unchecked Sendable {
     private let lock = NSLock()
     private var queue: [Line] = []
     private var state = State.idle
-    private var userRun = 0, userQuiet = 0
+    private var userRun = 0, userQuiet = 0, waited = 0
     /// What happened, for logs and reports: (frame index, message).
     public var onEvent: (@Sendable (Int, String) -> Void)?
 
@@ -121,13 +127,21 @@ public final class Prompter: @unchecked Sendable {
         lock.withLock {
             switch state {
             case .idle:
-                guard let line = queue.first, Double(index) * frameSeconds >= line.notBefore, userRun == 0 else { return nil }
-                if settings.waitForTurn {
-                    guard sampled == eop else { return nil }
+                // Exclusive: Haru says only the prompter's lines; its own words become silence.
+                let own: Int? = settings.exclusive && sampled != pad ? pad : nil
+                guard let line = queue.first, Double(index) * frameSeconds >= line.notBefore, userRun == 0 else {
+                    waited = 0
+                    return own
+                }
+                if settings.waitForTurn || settings.turnWaitFrames > 0 {
+                    let limit = settings.waitForTurn ? Int.max : settings.turnWaitFrames
+                    if sampled != eop, waited < limit { waited += 1; return own }
                     queue.removeFirst()
                     state = .speaking(line, attempt: 0, next: 0, since: index, mute: 0)
-                    event(index, "Haru takes the turn; saying \"\(line.text)\"")
-                    return nil
+                    let took = sampled == eop
+                    event(index, (took ? "Haru takes the turn" : "made to speak after \(waited) frames") + "; saying \"\(line.text)\"")
+                    waited = 0
+                    return took ? nil : eop
                 }
                 queue.removeFirst()
                 state = .speaking(line, attempt: 0, next: 0, since: index, mute: 0)
@@ -147,11 +161,11 @@ public final class Prompter: @unchecked Sendable {
             case let .holding(until):
                 if index < until { return pad }
                 state = .idle
-                return nil
+                return settings.exclusive && sampled != pad ? pad : nil
             case .listening:
                 if userQuiet < 4 { return pad }
                 state = .idle
-                return nil
+                return settings.exclusive && sampled != pad ? pad : nil
             }
         }
     }

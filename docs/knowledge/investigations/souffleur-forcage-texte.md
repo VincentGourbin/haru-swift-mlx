@@ -122,3 +122,23 @@ la phrase imposée, pas si la phrase répondait bien.
 15 mots, 1,9 s après la fin de l'utilisateur (dont 1,4 s de transcription par outil en ligne de commande et
 0,35 s de LLM). Restent : une transcription en flux à langue fixée, le français, et la mesure du pas de
 Haru quand l'ASR et le LLM tournent en même temps sur la carte graphique, avant de passer dans l'app.
+
+## Mode exclusif : Haru ne dit que les répliques du souffleur
+
+Entre deux répliques, le texte de Haru est tenu sur PAD (`Prompter.Settings.exclusive`, défaut). Mêmes plans,
+mêmes seeds, d'un bloc :
+
+| | libre entre les répliques | exclusif |
+|---|---|---|
+| anglais, ASR réel | 24/25, rappel 94 % | **25/25, rappel 95 %**, aucun départ muet |
+| français, transcription parfaite, voix de référence française | 9/25, rappel 33 % | **25/25, rappel 80 %**, aucun départ muet |
+
+Les échecs venaient surtout de Haru qui improvisait sa propre réponse au même moment. Attendre que Haru
+prenne le tour lui-même (au plus 4 frames, `--steer-turn-wait 4`) le fait 17 fois sur 25, sans gain de
+rappel et avec 0,4 s de délai en plus : on le fait parler tout de suite.
+
+Charge sur la carte graphique (simulation au rythme réel, 58 s, bf16) : seul, pas de Haru p99 45 ms, 0 frame
+en retard ; avec Gemma 4 E4B qui génère en continu, p99 58 ms, 0 en retard ; avec Voxtral relancé en boucle en
+ligne de commande (chargement compris), p99 80 ms, **8 frames en retard, jusqu'à 508 ms**. La transcription
+en direct ne doit pas recharger un modèle sur la carte graphique à chaque phrase : l'app utilise la
+reconnaissance d'Apple, sur l'appareil.
