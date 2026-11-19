@@ -100,7 +100,7 @@ la phrase imposée, pas si la phrase répondait bien.
 
 - **Le découpage par phrases casse la voix** : avec le texte frame par frame (seed 0), la voix dit le premier
   morceau puis se tait après la pause insérée, alors que le texte continue (« … this morning. » dit,
-  « It was pretty quick. » muet). D'un bloc, 92 % des jetons de mots imposés sont voisés sur 5 seeds. Le
+  « It was pretty quick. » muet). D'un bloc, 90 % des jetons de mots imposés sont voisés sur 5 seeds. Le
   découpage est désactivé par défaut (`--steer-chunked` pour l'essayer).
 - Le décideur répond à la demande quand il l'a bien entendue : « Raconte-moi une blague » → une blague,
   « une idée de recette » → des pâtes aux légumes. En anglais, la transcription n'a compris que 3 des
