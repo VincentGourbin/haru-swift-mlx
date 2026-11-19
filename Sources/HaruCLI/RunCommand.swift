@@ -78,6 +78,11 @@ struct Run: AsyncParsableCommand {
     @Flag(help: "The model opens the conversation.") var speakFirst = false
     @Flag(help: "Write the user on the left channel and the model on the right.") var stereo = false
     @Option(help: "Write per-frame text and tokens as JSON lines.") var transcript: String?
+    @Option(help: "Steering: words imposed on Haru's text stream (its voice is left to the model).") var steer: String?
+    @Option(help: "Steering starts after this time in seconds.") var steerAfter: Double = 0
+    @Option(help: "eop: when Haru itself starts speaking; now: Haru is made to start at --steer-after.") var steerWhen = "eop"
+    @Option(help: "Seconds of forced silence (text) after the imposed words.") var steerHold: Double = 3
+    @Option(help: "fixed: one imposed token per frame; model: only the frames where Haru writes a word get one (its pauses are kept).") var steerPace = "fixed"
 
     func run() async throws {
         let model = try await modelOptions.load()
@@ -105,6 +110,12 @@ struct Run: AsyncParsableCommand {
         config.eopBias = eopBias
         let session = DuplexSession(model: model, systemPrompt: try card.systemPromptText(),
                                     reference: try card.referenceAudio(), config: config)
+        if let steer {
+            let steerer = Steerer(tokens: model.tokenizer!.encode(" " + steer), pad: model.config.padTokenId,
+                                  eop: model.config.eopTokenId, frameSeconds: Double(frameSamples) / 24_000,
+                                  after: steerAfter, now: steerWhen == "now", hold: steerHold, paced: steerPace == "model")
+            session.textOverride = { steerer.override($0, $1) }
+        }
         // Model frame t is heard while the user speaks frame t: the last user frame needs no step.
         var frames = [session.start()]
         for i in 0 ..< (count - 1) {
@@ -130,5 +141,48 @@ struct Run: AsyncParsableCommand {
         print(String(format: "%d frames (%.1f s), prompt %d positions in %.2f s, %.1f ms per frame (p99 %.1f) -> %@",
                      count, Double(count * frameSamples) / 24_000, session.promptLength, frames[0].seconds, pct(0.5), pct(0.99), output))
         print(frames.map(\.text).joined().trimmingCharacters(in: .whitespaces))
+    }
+}
+
+/// Imposes a sentence on Haru's text stream once, after a given time: either from the frame where Haru
+/// itself starts speaking (EOP), or by making it start; then holds the text silent for a while.
+final class Steerer {
+    let tokens: [Int], pad: Int, eop: Int, frameSeconds: Double, after: Double, now: Bool, holdFrames: Int, paced: Bool
+    private var position: Int?
+    private var holdUntil: Int?
+    private var done = false
+
+    init(tokens: [Int], pad: Int, eop: Int, frameSeconds: Double, after: Double, now: Bool, hold: Double, paced: Bool) {
+        (self.tokens, self.pad, self.eop, self.frameSeconds, self.after, self.now) = (tokens, pad, eop, frameSeconds, after, now)
+        self.paced = paced
+        holdFrames = Int(hold / frameSeconds)
+    }
+
+    func override(_ index: Int, _ sampled: Int) -> Int? {
+        if done { return nil }
+        if let until = holdUntil {
+            if index < until { return pad }
+            done = true
+            return nil
+        }
+        if let k = position {
+            // Paced: Haru's own PAD and EOP frames are kept (its pauses and phrase starts), except that the
+            // first imposed token always follows the start.
+            if paced, k > 0, k < tokens.count, sampled == pad || sampled == eop { return nil }
+            if k < tokens.count { position = k + 1; return tokens[k] }
+            holdUntil = index + holdFrames
+            return pad
+        }
+        guard Double(index) * frameSeconds >= after else { return nil }
+        if now {
+            position = 0
+            print(String(format: "steer: Haru made to speak at %.2f s", Double(index) * frameSeconds))
+            return eop
+        }
+        if sampled == eop {
+            position = 0
+            print(String(format: "steer: Haru started speaking at %.2f s, imposing %d tokens", Double(index) * frameSeconds, tokens.count))
+        }
+        return nil
     }
 }

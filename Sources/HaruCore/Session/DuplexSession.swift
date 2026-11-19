@@ -56,6 +56,10 @@ public final class DuplexSession {
     /// Per frame (parity tests): the final hidden state, the head's own latent and the sampled token,
     /// before any forcing.
     var onTrace: ((MLXArray, MLXArray, Int) -> Void)?
+    /// Text steering: called each frame with (frame index, sampled token); a non-nil result replaces the
+    /// text token (the model's own audio latent is kept). The token enters the next frame's input, so a
+    /// prompter can choose Haru's words while the head keeps choosing the voice.
+    public var textOverride: ((Int, Int) -> Int?)?
     /// Per step (parity tests): the user latent the step consumed.
     var onUserLatent: ((MLXArray) -> Void)?
 
@@ -214,6 +218,9 @@ public final class DuplexSession {
         let headNoise = noise.normal([1, model.config.latentDim], dtype: model.dtype)
         var nextLatent = model.unscaleLatents(model.head.sample(hidden, noise: headNoise, guidance: config.guidanceScale))
         onTrace?(hidden, nextLatent, onTrace == nil ? 0 : nextToken.item(Int.self))
+        if let textOverride, let t = textOverride(index, nextToken.item(Int.self)) {
+            nextToken = MLXArray([Int32(t)]).reshaped(nextToken.shape)
+        }
         if let forced {
             let (t, l) = forced(index)
             nextToken = MLXArray([Int32(t)]).reshaped(nextToken.shape)
