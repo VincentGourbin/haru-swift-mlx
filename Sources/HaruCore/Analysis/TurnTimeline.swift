@@ -80,12 +80,19 @@ public struct TurnDetector: Sendable {
         SpeechSegment(start: Double(first) * frameSeconds, end: Double(last + 1) * frameSeconds)
     }
 
-    /// Pairs each user utterance with the first Haru segment that is still going when it ends and
-    /// starts before the next utterance. `text` is (frame index, text) of Haru's frames.
+    /// Pairs each user utterance with the first Haru segment that starts after the utterance has begun,
+    /// is still going when it ends, and starts before the next utterance. A segment answers at most one
+    /// utterance: when the user talks over a sentence Haru had already started, that is an overlap, not
+    /// a reply. `text` is (frame index, text) of Haru's frames.
     public func turns(user: [SpeechSegment], model: [SpeechSegment], text: [(Int, String)] = []) -> [Turn] {
-        user.enumerated().map { i, u in
+        var used = Set<Int>()
+        return user.enumerated().map { i, u in
             let next = i + 1 < user.count ? user[i + 1].start : .infinity
-            let reply = model.first { $0.end > u.end && $0.start < next }
+            let index = model.indices.first {
+                !used.contains($0) && model[$0].start > u.start && model[$0].end > u.end && model[$0].start < next
+            }
+            if let index { used.insert(index) }
+            let reply = index.map { model[$0] }
             var said = ""
             if let reply {
                 for (index, t) in text {

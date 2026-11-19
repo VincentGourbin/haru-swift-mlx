@@ -37,6 +37,24 @@ import Testing
         #expect(abs(turns[0].delay! + 2 * T) < 1e-9)
     }
 
+    @Test func talkingOverAnOngoingSentenceIsNotAnswered() {
+        // Haru starts first; the user talks twice over it; then a real reply to the third utterance.
+        let user = d.segments(levels("...###.......###............###.............."))
+        let haru = d.segments(levels("##################...............#####......"))
+        let turns = d.turns(user: user, model: haru)
+        #expect(turns[0].reply == nil)
+        #expect(turns[1].reply == nil)
+        #expect(abs(turns[2].delay! - 2 * T) < 1e-9)
+    }
+
+    @Test func aSegmentAnswersOneUtterance() {
+        // Two utterances in a row, one reply: it belongs to the first that it follows, not to both.
+        let user = d.segments(levels("###........###.............."))
+        let haru = d.segments(levels("..........########.........."))
+        let turns = d.turns(user: user, model: haru)
+        #expect(turns.compactMap(\.reply).count == 1)
+    }
+
     @Test func levelOfSilenceAndFullScale() {
         #expect(TurnDetector.level([Float](repeating: 0, count: 3200)[...]) < -100)
         #expect(abs(TurnDetector.level([Float](repeating: 1, count: 3200)[...])) < 1e-4)
