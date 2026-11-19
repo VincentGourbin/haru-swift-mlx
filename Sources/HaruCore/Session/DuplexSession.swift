@@ -60,6 +60,8 @@ public final class DuplexSession {
     /// text token (the model's own audio latent is kept). The token enters the next frame's input, so a
     /// prompter can choose Haru's words while the head keeps choosing the voice.
     public var textOverride: ((Int, Int) -> Int?)?
+    /// Audio guidance for frame `index` instead of `config.guidanceScale` (nil: keep it).
+    public var guidanceOverride: ((Int) -> Float?)?
     /// Per step (parity tests): the user latent the step consumed.
     var onUserLatent: ((MLXArray) -> Void)?
 
@@ -216,7 +218,7 @@ public final class DuplexSession {
         var nextToken = sampleToken(logits, temperature: config.temperature, topK: config.topK, topP: config.topP,
                                     key: noise.nextKey())
         let headNoise = noise.normal([1, model.config.latentDim], dtype: model.dtype)
-        var nextLatent = model.unscaleLatents(model.head.sample(hidden, noise: headNoise, guidance: config.guidanceScale))
+        var nextLatent = model.unscaleLatents(model.head.sample(hidden, noise: headNoise, guidance: guidanceOverride?(index) ?? config.guidanceScale))
         onTrace?(hidden, nextLatent, onTrace == nil ? 0 : nextToken.item(Int.self))
         if let textOverride, let t = textOverride(index, nextToken.item(Int.self)) {
             nextToken = MLXArray([Int32(t)]).reshaped(nextToken.shape)

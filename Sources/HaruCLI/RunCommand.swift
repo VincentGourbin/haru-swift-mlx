@@ -78,11 +78,13 @@ struct Run: AsyncParsableCommand {
     @Flag(help: "The model opens the conversation.") var speakFirst = false
     @Flag(help: "Write the user on the left channel and the model on the right.") var stereo = false
     @Option(help: "Write per-frame text and tokens as JSON lines.") var transcript: String?
-    @Option(help: "Steering: words imposed on Haru's text stream (its voice is left to the model).") var steer: String?
-    @Option(help: "Steering starts after this time in seconds.") var steerAfter: Double = 0
-    @Option(help: "eop: when Haru itself starts speaking; now: Haru is made to start at --steer-after.") var steerWhen = "eop"
-    @Option(help: "Seconds of forced silence (text) after the imposed words.") var steerHold: Double = 3
-    @Option(help: "fixed: one imposed token per frame; model: only the frames where Haru writes a word get one (its pauses are kept).") var steerPace = "fixed"
+    @Option(help: "Prompter: a line imposed on Haru's text stream (its voice is left to the model).") var steer: String?
+    @Option(help: "The --steer line is said no earlier than this time (seconds).") var steerAfter: Double = 0
+    @Option(help: "Prompter plan: JSON lines {\"at\": seconds, \"text\": line}.") var steerPlan: String?
+    @Option(help: "now: Haru is made to speak at the line's time; eop: the line waits for Haru to take the turn.") var steerWhen = "now"
+    @Option(help: "Seconds of forced text silence after a line.") var steerHold: Double = 3
+    @Option(help: "Start-overs of a line when Haru's voice stays mute.") var steerRetries = 1
+    @Flag(help: "Write a line in one go instead of phrase by phrase with pauses.") var steerFlat = false
 
     func run() async throws {
         let model = try await modelOptions.load()
@@ -110,16 +112,34 @@ struct Run: AsyncParsableCommand {
         config.eopBias = eopBias
         let session = DuplexSession(model: model, systemPrompt: try card.systemPromptText(),
                                     reference: try card.referenceAudio(), config: config)
-        if let steer {
-            let steerer = Steerer(tokens: model.tokenizer!.encode(" " + steer), pad: model.config.padTokenId,
-                                  eop: model.config.eopTokenId, frameSeconds: Double(frameSamples) / 24_000,
-                                  after: steerAfter, now: steerWhen == "now", hold: steerHold, paced: steerPace == "model")
-            session.textOverride = { steerer.override($0, $1) }
+        var prompter: Prompter?
+        if steer != nil || steerPlan != nil {
+            var settings = Prompter.Settings()
+            settings.holdSeconds = steerHold
+            settings.retries = steerRetries
+            settings.waitForTurn = steerWhen == "eop"
+            settings.chunked = !steerFlat
+            let p = Prompter(tokenizer: model.tokenizer!, config: model.config, settings: settings)
+            p.onEvent = { _, message in print("prompter: " + message) }
+            if let steer { p.say(steer, notBefore: steerAfter) }
+            if let steerPlan {
+                for line in try String(contentsOfFile: (steerPlan as NSString).expandingTildeInPath, encoding: .utf8)
+                    .split(separator: "\n") where !line.isEmpty {
+                    let o = try JSONSerialization.jsonObject(with: Data(line.utf8)) as! [String: Any]
+                    p.say(o["text"] as! String, notBefore: (o["at"] as? Double) ?? 0)
+                }
+            }
+            session.textOverride = { p.override($0, $1) }
+            session.guidanceOverride = { p.guidance($0) }
+            prompter = p
         }
         // Model frame t is heard while the user speaks frame t: the last user frame needs no step.
         var frames = [session.start()]
         for i in 0 ..< (count - 1) {
-            frames.append(try session.step(Array(user[(i * frameSamples) ..< ((i + 1) * frameSamples)])))
+            let heard = Array(user[(i * frameSamples) ..< ((i + 1) * frameSamples)])
+            let frame = try session.step(heard)
+            prompter?.observe(index: frame.index, output: frame.audio, userLevel: TurnDetector.level(heard[...]))
+            frames.append(frame)
         }
         let reply = frames.flatMap(\.audio)
         let out = URL(fileURLWithPath: (output as NSString).expandingTildeInPath)
@@ -144,45 +164,3 @@ struct Run: AsyncParsableCommand {
     }
 }
 
-/// Imposes a sentence on Haru's text stream once, after a given time: either from the frame where Haru
-/// itself starts speaking (EOP), or by making it start; then holds the text silent for a while.
-final class Steerer {
-    let tokens: [Int], pad: Int, eop: Int, frameSeconds: Double, after: Double, now: Bool, holdFrames: Int, paced: Bool
-    private var position: Int?
-    private var holdUntil: Int?
-    private var done = false
-
-    init(tokens: [Int], pad: Int, eop: Int, frameSeconds: Double, after: Double, now: Bool, hold: Double, paced: Bool) {
-        (self.tokens, self.pad, self.eop, self.frameSeconds, self.after, self.now) = (tokens, pad, eop, frameSeconds, after, now)
-        self.paced = paced
-        holdFrames = Int(hold / frameSeconds)
-    }
-
-    func override(_ index: Int, _ sampled: Int) -> Int? {
-        if done { return nil }
-        if let until = holdUntil {
-            if index < until { return pad }
-            done = true
-            return nil
-        }
-        if let k = position {
-            // Paced: Haru's own PAD and EOP frames are kept (its pauses and phrase starts), except that the
-            // first imposed token always follows the start.
-            if paced, k > 0, k < tokens.count, sampled == pad || sampled == eop { return nil }
-            if k < tokens.count { position = k + 1; return tokens[k] }
-            holdUntil = index + holdFrames
-            return pad
-        }
-        guard Double(index) * frameSeconds >= after else { return nil }
-        if now {
-            position = 0
-            print(String(format: "steer: Haru made to speak at %.2f s", Double(index) * frameSeconds))
-            return eop
-        }
-        if sampled == eop {
-            position = 0
-            print(String(format: "steer: Haru started speaking at %.2f s, imposing %d tokens", Double(index) * frameSeconds, tokens.count))
-        }
-        return nil
-    }
-}

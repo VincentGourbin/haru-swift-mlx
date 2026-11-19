@@ -70,3 +70,44 @@ proches (« sœurs » pour « cœurs »). Dans 1 à 2 essais sur 10 la voix ne s
 À faire ensuite : détecter le cas « texte imposé, voix muette » (énergie de sortie basse après l'EOP forcé) et
 réessayer ; un juge plus solide en français (Voxtral fp16) ; puis brancher un vrai LLM qui écoute la
 transcription et décide quoi dire et quand.
+
+## Suite (même jour) : relance quand la voix reste muette, puis boucle complète avec un décideur
+
+**Voix muette.** `Prompter` (HaruCore) remplace l'injection ponctuelle : file de répliques, EOP puis jetons,
+détection de mutisme (8 frames sous −50 dBFS après l'EOP), relance, abandon si l'utilisateur parle.
+Sur le cas reproductible (français, seed 0), la relance ne suffit pas : relancer tout de suite, après 0,67 s
+de pause, avec un « Ah, » d'amorce ou avec un guidage audio à 1,0 pendant la relance, la voix reste muette
+à 24,8 s et à 28 s, mais parle si on injecte à 25,6 s ou à 26,5 s. Le mutisme dépend de l'état de la
+session, pas du hasard : il est détecté et signalé, une seule relance est gardée.
+
+**Boucle complète hors ligne** (`Scripts/prompter/offline.py`) : fin de l'intervention par le même seuil que
+`TurnDetector` → transcription Voxtral Realtime de l'intervention seule (1 s de contexte avant, 1 s de
+silence après) → Gemma 4 E4B 4 bits en local (`gemma4-server`, rien ne sort du Mac) → réplique due à
+fin + temps ASR + temps LLM mesurés (causal). Haru la dit via `--steer-plan`. Temps mesurés : ASR 0,7 à
+1,6 s (outil en ligne de commande, l'intervention entière), LLM 0,1 à 0,45 s. La voix démarre donc 1,2 à
+2,3 s après la fin de l'utilisateur, contre 0,5 à 1 s pour Haru seul ; une transcription en flux
+ramènerait la partie ASR vers 0,3 s.
+
+| | répliques dites (rappel ≥ 50 %) | rappel moyen par seed |
+|---|---|---|
+| anglais, ASR réel, découpé par phrases | **18/25** | 23 · 62 · 99 · 46 · 96 % |
+| français, transcription parfaite, d'un bloc | 9/25 | 60 · 6 · 55 · 10 · 35 % |
+| français, transcription parfaite, découpé par phrases | 8/25 | 55 · 13 · 33 · 14 · 48 % |
+
+- Le décideur répond à la demande : « Raconte-moi une blague » → une blague, « une idée de recette » → des
+  pâtes aux légumes, une phrase mal entendue → « Sorry, I didn't quite catch that ».
+- Échec typique : **la voix prend du retard sur le texte.** Dans un seed anglais, « I had toast and
+  coffee » est dit dix secondes plus tard, pendant la réplique suivante ; Haru finit d'abord ce qu'il avait
+  commencé à dire de lui-même. Le découpage par phrases (EOP + pauses dimensionnées sur la longueur
+  parlée) n'y change pas grand-chose en français.
+- En français, une partie des répliques sort inintelligible, même avec la voix de référence française.
+- La transcription de l'utilisateur est le maillon faible : Voxtral Realtime n'a pas d'option de langue et
+  bascule (« Telme Abou Atri Piyoudé Loftoté », « I call it black » pour « Raconte-moi une blague »). Les
+  versions 6 et 8 bits donnent le même texte. La reconnaissance d'Apple (sur l'appareil, en flux, avec la
+  langue fixée, et sans la carte graphique que Haru utilise) demande une autorisation qu'un outil en ligne
+  de commande n'obtient pas ; elle est à essayer dans l'app.
+
+**Bilan.** Le cadre fonctionne de bout en bout en anglais (72 % des répliques dites, deux seeds sur cinq
+presque parfaits). Reste à : empêcher la voix de dériver (attendre que la voix ait fini avant d'imposer, en
+surveillant le niveau de sortie plutôt qu'en comptant des frames) ; une transcription en flux à langue
+fixée ; le français.
